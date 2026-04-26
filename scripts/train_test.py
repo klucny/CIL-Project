@@ -17,7 +17,7 @@ def train(train_loader : DataLoader, test_loader : DataLoader, model : Net, num_
         model.train()
         train_loss : float = 0.0
 
-        print(f"Epoch: {epoch}/{num_epochs}")
+        print(f"Epoch: {epoch+1}/{num_epochs}")
         for batch_idx, (image, gt) in enumerate(train_loader):
             image = image.to(device)
             gt = gt.to(device)

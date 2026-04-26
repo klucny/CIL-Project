@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader, random_split
 
-from scripts.data import CILDataset
+from scripts.dataset import CILDataset
 from scripts.models import CNN, CNNSmall
 from scripts.train_test import train, eval
 import torch

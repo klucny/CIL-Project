@@ -25,7 +25,13 @@ class CILDataset(Dataset):
         # load image and convert to tensor
         img_path = self.image_paths[idx]
         image = Image.open(img_path).convert('RGB')
-        image_tensor = transforms.ToTensor()(image)
+        # image_tensor = transforms.ToTensor()(image)
+        transformations = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+        image_tensor = transformations(image)
+
 
         # load gt and convert to tensor
         gt_path = self.np_gt_paths[idx]
