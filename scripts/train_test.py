@@ -4,6 +4,7 @@ from scripts.models import Net
 import os
 from datetime import  datetime
 import time
+import numpy as np
 
 def train(train_loader : DataLoader, test_loader : DataLoader, model : Net, num_epochs : int, optimizer : torch.optim.Optimizer ,device : torch.device) -> None | str:
     print("Training the model...")
@@ -44,14 +45,24 @@ def train(train_loader : DataLoader, test_loader : DataLoader, model : Net, num_
                 best_loss = loss.item()
                 best_model_state :  dict = model.state_dict()
 
+
+        if best_model_state:
+            print(f"Saving best model")
+            saved_models_path: str = "./models/"
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch}.pth"
+            os.makedirs(saved_models_path, exist_ok=True)
+            torch.save(best_model_state, saved_models_path + model_name)
+
         model.eval()
         test_loss : float = 0.0
-        for batch_idx, (image, gt) in enumerate(test_loader):
-            image = image.to(device)
-            gt = gt.to(device)
-            out = model.forward(image)
-            loss = model.compute_loss(out, gt)
-            test_loss += loss.item()
+        with torch.no_grad():
+            for batch_idx, (image, gt) in enumerate(test_loader):
+                image = image.to(device)
+                gt = gt.to(device)
+                out = model.forward(image)
+                loss = model.compute_loss(out, gt)
+                test_loss += loss.item()
 
         print(f"Test Loss in epoch {epoch}/{num_epochs}: {test_loss}")
 
@@ -75,12 +86,40 @@ def train(train_loader : DataLoader, test_loader : DataLoader, model : Net, num_
 def eval(dataloader : DataLoader, model : Net, device : torch.device):
     print("Evaluating the model...")
     model.to(device)
+    with torch.no_grad():
+        for batch_idx, (image, gt) in enumerate(dataloader):
+            print(f"Batch: {batch_idx}/{len(dataloader)}")
+            image = image.to(device)
+            gt = gt.to(device)
+            out = model.forward(image)
+            loss = model.compute_loss(out, gt)
+            print(loss.item())
+        model.eval()
 
-    for batch_idx, (image, gt) in enumerate(dataloader):
-        print(f"Batch: {batch_idx}/{len(dataloader)}")
-        image = image.to(device)
-        gt = gt.to(device)
-        out = model.forward(image)
-        loss = model.compute_loss(out, gt)
-        print(loss.item())
-    model.eval()
+def run_grading_tests(data_loader: DataLoader, model : Net, device : torch.device):
+    print("Running grading tests...")
+    # results = torch.zeros((len(data_loader.dataset), 560, 560), dtype=torch.float32)
+    print("lenght data laoder" +str(len(data_loader)))
+
+    model.to(device)
+    # print(results.shape[0])
+    with torch.no_grad():
+        for batch_idx, (image, name) in enumerate(data_loader):
+            print(name)
+            print(f"Batch: {batch_idx}/{len(data_loader)}")
+            image = image.to(device)
+            out = model.forward(image)
+
+            for idx in range(len(out)):
+                # results[batch_idx*data_loader.batch_size : min(batch_idx*data_loader.batch_size+data_loader.batch_size, results.shape[0]), :, :] = out
+                print(name[idx])
+                path_to_test_result: str = os.path.join("./results", "test_" +str(name[idx])+".npy" )
+                os.makedirs("./results", exist_ok=True)
+                np.save(path_to_test_result, out[idx,:,:].cpu().numpy())
+
+
+        print(f"Wrote results to ./results/")
+
+
+
+
