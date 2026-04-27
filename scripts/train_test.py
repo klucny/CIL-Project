@@ -63,7 +63,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 loss = model.compute_loss(out, gt)
                 test_loss += loss.item()
 
-        print(f"Test Loss in epoch {epoch}/{num_epochs}: {test_loss / len(test_loader)}")
+        print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
 

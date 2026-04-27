@@ -53,7 +53,6 @@ class CILDataset(Dataset):
             ])
             image_tensor = transformations(image)
 
-            print(ground_truth.shape)
 
             if torch.rand(1) < 0.9:
                 image_tensor = vision_F.hflip(image_tensor)
