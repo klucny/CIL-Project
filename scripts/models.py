@@ -79,18 +79,7 @@ class CNN(Net):
         )
 
     def forward(self, x) -> torch.Tensor:
-        # e1 = self.enc_conv1(x)
-        # p1 = self.pool1(e1)
-        #
-        # e2 = self.enc_conv2(p1)L
-        # p2 = self.pool2(e2)
-        #
-        # e3 = self.enc_conv3(p2)
-        # p3 = self.pool3(e3)
-        #
-        # b = self.bottleneck(p3)
-
-        pad_size = 8
+        pad_size = 8 # needed to bring the pictures to size 572 because otherwise with ResNet size issue will occur
 
         x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
 
@@ -125,10 +114,6 @@ class CNN(Net):
         out = F.softplus(out) + 1e-4
 
         return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
-
-    # def eval(self,x):
-    #     with torch.no_grad():
-    #         return self.forward(x)
 
 
 class CNNSmall(Net):
@@ -178,9 +163,4 @@ class CNNSmall(Net):
 
         x = self.decoder(x)
 
-
         return x.squeeze(1)
-
-    # def eval(self, x):
-    #     with torch.no_grad():
-    #         return self.forward(x)

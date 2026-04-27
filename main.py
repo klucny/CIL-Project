@@ -1,9 +1,9 @@
-from torch.utils.checkpoint import checkpoint
 from torch.utils.data import DataLoader, random_split
 
 from scripts.dataset import CILDataset
 from scripts.models import CNN, CNNSmall
 from scripts.train_test import train, eval, run_grading_tests
+from scripts.create_submission import create_results_csv
 import torch
 import argparse
 import os
@@ -23,18 +23,22 @@ if __name__ == '__main__':
 
     parser.add_argument("--checkpoint", type=str, default=None,
                         help="Name of the model's checkpoint file, that should be used for the grading tests. ")
+
+    parser.add_argument("--model", type=str, default=None,
+                        help="Name of the model's that should be used (currently CNN, CNNSmall). (default: CNN)")
     args = parser.parse_args()
 
+    # set base variables
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     BATCH_SIZE = args.batch_size
     TRAIN_TEST_SPLIT_RATIO = 0.8  # e.g. 0.8 -> 80% of the data used for training, 20% for testing
     NUM_EPOCHS = args.num_epochs
+    chosen_model = CNNSmall() if args.student_cluster == "CNNSmall" else CNN()
 
-
-
+    # decided based on arg flag if the grading test should be run.
     if args.grading_tests:
         print("Running grading tests instead of training.")
-        grading_model = CNN()
+        grading_model = type(chosen_model)()
         weights_dict = torch.load(os.path.join("./models", args.checkpoint), map_location=torch.device(device))
         grading_model.load_state_dict(weights_dict)
 
@@ -47,8 +51,9 @@ if __name__ == '__main__':
 
         test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
         run_grading_tests(test_loader, grading_model, device=device)
+        create_results_csv()
 
-
+    # decided to train the model and run the evaluation/test instead of running the grading tests, based on arg flag.
     else:
         if args.student_cluster:
             print("Using student cluster dataset path.")
@@ -57,7 +62,7 @@ if __name__ == '__main__':
             print("Using local dataset path.")
             dataset = CILDataset('./data/monodepth_kaggle2026/train')
 
-        model = CNN() # Define which model to use
+        model = type(chosen_model)()  # Define which model to use
 
         # generate the test and training datasets
         generator = torch.Generator().manual_seed(10)
@@ -72,17 +77,12 @@ if __name__ == '__main__':
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-        path_to_best_model : str = train(train_loader, test_loader, model, num_epochs=NUM_EPOCHS, optimizer=optimizer, device=device)
-        # path_to_best_model = "./models/CNN_best_20260423-202642.pth"
+        path_to_best_model: str = train(train_loader, test_loader, model, num_epochs=NUM_EPOCHS, optimizer=optimizer,
+                                        device=device)
 
         # Load the best model and run the evaluation/test
-        eval_model = CNN()
+        # create an eval_model of the same type as "model"
+        eval_model = type(chosen_model)()
         weights_dict = torch.load(path_to_best_model, map_location=torch.device(device))
         eval_model.load_state_dict(weights_dict)
         eval(test_loader, eval_model, device=device)
-
-
-
-
-
-
