@@ -103,20 +103,17 @@ def eval(dataloader: DataLoader, model: Net, device: torch.device):
 def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device):
     print("Running grading tests...")
     # results = torch.zeros((len(data_loader.dataset), 560, 560), dtype=torch.float32)
-    print("lenght data laoder" + str(len(data_loader)))
 
     model.to(device)
     # print(results.shape[0])
     with torch.no_grad():
         for batch_idx, (image, name) in enumerate(data_loader):
-            print(name)
             print(f"Batch: {batch_idx}/{len(data_loader)}")
             image = image.to(device)
             out = model.forward(image)
 
             for idx in range(len(out)):
                 # results[batch_idx*data_loader.batch_size : min(batch_idx*data_loader.batch_size+data_loader.batch_size, results.shape[0]), :, :] = out
-                print(name[idx])
                 path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
                 os.makedirs("./results", exist_ok=True)
                 np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
