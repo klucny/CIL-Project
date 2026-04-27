@@ -164,3 +164,6 @@ class CNNSmall(Net):
         x = self.decoder(x)
 
         return x.squeeze(1)
+
+    class Transformer(Net):
+        pass
