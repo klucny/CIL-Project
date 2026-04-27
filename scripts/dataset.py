@@ -1,9 +1,12 @@
+from tkinter import image_types
+
 import torch
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as vision_F
 import os
+import cv2 as cv
 import numpy as np
 
 
@@ -29,12 +32,15 @@ class CILDataset(Dataset):
         # load image and convert to tensor
         img_path = self.image_paths[idx]
         image = Image.open(img_path).convert('RGB')
-        # image_tensor = transforms.ToTensor()(image)
-        if self.test_dataset:
-            transformations = transforms.Compose([
+
+        transformations = transforms.Compose([
+                transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.05, 0.05)),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
             ])
+
+        if self.test_dataset:
+
             image_tensor = transformations(image)
 
             # in case it is a test dataset, return the image tensor and the image name (without the path and extension) to be used for saving the predictions later.
@@ -46,37 +52,53 @@ class CILDataset(Dataset):
             gt = np.load(gt_path)
             ground_truth = torch.from_numpy(gt).to(dtype=torch.float32)
 
-            transformations = transforms.Compose([
-                transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.05, 0.05)),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
             image_tensor = transformations(image)
 
+            if torch.rand(1) < 0.5:
+                color_transform = transforms.ColorJitter(0.2, 0.2, 0.2, 0.1)
+                image_tensor = color_transform(image_tensor)
 
-            if torch.rand(1) < 0.9:
+
+            if torch.rand(1) < 0.5:
                 image_tensor = vision_F.hflip(image_tensor)
                 ground_truth = vision_F.hflip(ground_truth)
-
-
-
-
-
-
-            # transformations = transforms.Compose([
-            #     transforms.RandomHorizontalFlip(p=0.5),
-            #     # transforms.RandomVerticalFlip(p=0.2),
-            #     # transforms.RandomRotation(degrees=5),
-            #     # transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
-            #     transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5)),
-            #     transforms.ToTensor(),
-            #     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            # ])
-
 
             return image_tensor, ground_truth
 
 
+
+
+class CannyDataset(CILDataset):
+    def __init__(self, path_to_data : str, test_dataset : bool = False):
+        super().__init__(path_to_data, test_dataset)
+        self.path_to_data = path_to_data
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, str]:
+
+        res = super().__getitem__(idx)
+        image_tensor : torch.Tensor = res[0]
+        gt_or_name : str | torch.Tensor = res[1]
+
+
+
+        # load image, convert to grayscale, run canny edge detection
+        img_path = self.image_paths[idx]
+        img = cv.imread(img_path)
+
+        img_grayscale= cv.cvtColor(img, cv.COLOR_RGB2GRAY)
+
+
+        edges = cv.Canny(img_grayscale, 100, 200)
+
+        # convert the edges back to a tensor and concatenate it with the original image tensor
+        edges_tensor = torch.from_numpy(edges).unsqueeze(0).float() / 255.0
+
+        transformations = transforms.Compose([
+            transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.05, 0.05)),
+        ])
+        edges_tensor = transformations(edges_tensor)
+
+        return image_tensor, edges_tensor, gt_or_name
 
 
 

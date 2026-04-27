@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from scripts.models import Net
+from scripts.dataset import CILDataset, CannyDataset
+from scripts.models import Net, Canny
 import os
 from datetime import datetime
 import time
@@ -22,28 +23,54 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
         train_loss: float = 0.0
 
         print(f"Epoch: {epoch + 1}/{num_epochs}")
-        for batch_idx, (image, gt) in enumerate(train_loader):
-            image = image.to(device)
-            gt = gt.to(device)
 
-            optimizer.zero_grad()
+        if isinstance(model, Canny):
+            # TODO: adapt to use edges
+            for batch_idx, (image, edges, gt) in enumerate(train_loader):
+                image = image.to(device)
+                edges = edges.to(device)
+                gt = gt.to(device)
 
-            out = model.forward(image)
-            loss = model.compute_loss(out, gt)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
+                optimizer.zero_grad()
 
-            # print current epoch, batch and loss every 100 batches
-            if batch_idx % 100 == 0:
-                print(
-                    f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader.dataset)}], Loss: {loss.item():.4f}')
+                out = model.forward(image, edges)
+                loss = model.compute_loss(out, gt)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
 
-            #check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
-            if (loss.item() < best_loss):
-                best_loss = loss.item()
-                best_model_state: dict = model.state_dict()
+                # print current epoch, batch and loss every 100 batches
+                if batch_idx % 2000 == 0:
+                    print(
+                        f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
+                # check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
+                if (loss.item() < best_loss):
+                    best_loss = loss.item()
+                    best_model_state: dict = model.state_dict()
+
+        else:
+            for batch_idx, (image, gt) in enumerate(train_loader):
+                image = image.to(device)
+                gt = gt.to(device)
+                optimizer.zero_grad()
+                out = model.forward(image)
+                loss = model.compute_loss(out, gt)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+
+                # print current epoch, batch and loss every 100 batches
+                if batch_idx % 2000 == 0:
+                    print(
+                        f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
+
+                #check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
+                if (loss.item() < best_loss):
+                    best_loss = loss.item()
+                    best_model_state: dict = model.state_dict()
+
+        print(f"Training loss: {train_loss / len(train_loader.dataset)}")
         if best_model_state:
             print(f"Saving best model")
             saved_models_path: str = "./models/"
@@ -88,13 +115,23 @@ def eval(dataloader: DataLoader, model: Net, device: torch.device):
     model.to(device)
     total_loss: float = 0.0
     with torch.no_grad():
-        for batch_idx, (image, gt) in enumerate(dataloader):
-            print(f"Batch: {batch_idx}/{len(dataloader)}")
-            image = image.to(device)
-            gt = gt.to(device)
-            out = model.forward(image)
-            loss = model.compute_loss(out, gt)
-            total_loss += loss.item()
+        if isinstance(model, Canny):
+            #TODO: adapt to use edges
+            for batch_idx, (image, edges, gt) in enumerate(dataloader):
+                print(f"Batch: {batch_idx}/{len(dataloader)}")
+                image = image.to(device)
+                gt = gt.to(device)
+                out = model.forward(image)
+                loss = model.compute_loss(out, gt)
+                total_loss += loss.item()
+        else:
+            for batch_idx, (image, gt) in enumerate(dataloader):
+                print(f"Batch: {batch_idx}/{len(dataloader)}")
+                image = image.to(device)
+                gt = gt.to(device)
+                out = model.forward(image)
+                loss = model.compute_loss(out, gt)
+                total_loss += loss.item()
 
         print(f"Average loss: {total_loss / len(dataloader.dataset)}")
         model.eval()
@@ -105,17 +142,23 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
     # results = torch.zeros((len(data_loader.dataset), 560, 560), dtype=torch.float32)
 
     model.to(device)
-    # print(results.shape[0])
+    # check which type of dataset it is (Canny or CIL)
     with torch.no_grad():
-        for batch_idx, (image, name) in enumerate(data_loader):
-            print(f"Batch: {batch_idx}/{len(data_loader)}")
-            image = image.to(device)
-            out = model.forward(image)
+        if isinstance(model, Canny):
+            # TODO: adapt to use edges
+            for batch_idx, (image, edges, name) in enumerate(data_loader):
+                print(f"Batch: {batch_idx}/{len(data_loader)}")
+                image = image.to(device)
+                out = model.forward(image)
+        else:
+            for batch_idx, (image, name) in enumerate(data_loader):
+                print(f"Batch: {batch_idx}/{len(data_loader)}")
+                image = image.to(device)
+                out = model.forward(image)
 
-            for idx in range(len(out)):
-                # results[batch_idx*data_loader.batch_size : min(batch_idx*data_loader.batch_size+data_loader.batch_size, results.shape[0]), :, :] = out
-                path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
-                os.makedirs("./results", exist_ok=True)
-                np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+        for idx in range(len(out)):
+            path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
+            os.makedirs("./results", exist_ok=True)
+            np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
 
         print(f"Wrote results to ./results/")

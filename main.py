@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader, random_split
 
-from scripts.dataset import CILDataset
-from scripts.models import CNN, CNNSmall
+from scripts.dataset import CannyDataset
+from scripts.models import CNN, CNNSmall, CannyCNN
 from scripts.train_test import train, eval, run_grading_tests
 from scripts.create_submission import create_results_csv
 import torch
@@ -25,15 +25,27 @@ if __name__ == '__main__':
                         help="Name of the model's checkpoint file, that should be used for the grading tests. ")
 
     parser.add_argument("--model", type=str, default=None,
-                        help="Name of the model's that should be used (currently CNN, CNNSmall). (default: CNN)")
+                        help="Name of the model's that should be used (currently CNN, CNNSmall). (default: CannyCNN)")
+
+    parser.add_argument("--eval", type=str, default=None,
+                        help="Run eval, given the name of the checkpoint, on the whole dataset.")
     args = parser.parse_args()
+
+    available_models = {
+        "CNN": CNN,
+        "CNNSmall": CNNSmall,
+        "CannyCNN": CannyCNN,
+    }
 
     # set base variables
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     BATCH_SIZE = args.batch_size
     TRAIN_TEST_SPLIT_RATIO = 0.8  # e.g. 0.8 -> 80% of the data used for training, 20% for testing
     NUM_EPOCHS = args.num_epochs
-    chosen_model = CNNSmall() if args.student_cluster == "CNNSmall" else CNN()
+    chosen_model = available_models.get(args.model, CannyCNN)()
+
+
+
 
     # decided based on arg flag if the grading test should be run.
     if args.grading_tests:
@@ -44,23 +56,46 @@ if __name__ == '__main__':
 
         if args.student_cluster:
             print("Using student cluster dataset path.")
-            dataset = CILDataset('/cluster/courses/cil/monocular-depth-estimation/test', test_dataset=True)
+            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/test', test_dataset=True)
         else:
             print("Using local dataset path.")
-            dataset = CILDataset('./data/monodepth_kaggle2026/test', test_dataset=True)
+            dataset = CannyDataset('./data/monodepth_kaggle2026/test', test_dataset=True)
 
         test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
         run_grading_tests(test_loader, grading_model, device=device)
         create_results_csv()
 
     # decided to train the model and run the evaluation/test instead of running the grading tests, based on arg flag.
+    elif args.eval:
+        print("Running eval tests instead of training.")
+        if args.student_cluster:
+            print("Using student cluster dataset path.")
+            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/train')
+        else:
+            print("Using local dataset path.")
+            dataset = CannyDataset('./data/monodepth_kaggle2026/train')
+
+
+        eval_model = type(chosen_model)()
+        weights_dict = torch.load(os.path.join("./models", args.eval), map_location=torch.device(device))
+        eval_model.load_state_dict(weights_dict)
+
+        generator = torch.Generator().manual_seed(10)
+        train_dataset, test_dataset = random_split(dataset, [0.8, 0.2], generator=generator)
+        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+        eval(test_loader, eval_model, device=device)
+
+
+
+
     else:
         if args.student_cluster:
             print("Using student cluster dataset path.")
-            dataset = CILDataset('/cluster/courses/cil/monocular-depth-estimation/train')
+            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/train')
         else:
             print("Using local dataset path.")
-            dataset = CILDataset('./data/monodepth_kaggle2026/train')
+            dataset = CannyDataset('./data/monodepth_kaggle2026/train')
+
 
         model = type(chosen_model)()  # Define which model to use
 
@@ -80,9 +115,4 @@ if __name__ == '__main__':
         path_to_best_model: str = train(train_loader, test_loader, model, num_epochs=NUM_EPOCHS, optimizer=optimizer,
                                         device=device)
 
-        # Load the best model and run the evaluation/test
-        # create an eval_model of the same type as "model"
-        eval_model = type(chosen_model)()
-        weights_dict = torch.load(path_to_best_model, map_location=torch.device(device))
-        eval_model.load_state_dict(weights_dict)
-        eval(test_loader, eval_model, device=device)
+
