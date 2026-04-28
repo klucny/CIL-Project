@@ -1,7 +1,7 @@
 from tkinter import image_types
 
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as vision_F
@@ -24,6 +24,15 @@ class CILDataset(Dataset):
 
             if len(self.image_paths) != len(self.np_gt_paths):
                 raise Exception("Number of images and ground truths do not match.")
+
+    @classmethod
+    def empty_constructor(cls):
+        obj = cls.__new__(cls)
+        obj.path_to_data = ""
+        obj.test_dataset = False
+        obj.image_paths = []
+        obj.np_gt_paths = []
+        return obj
 
     def __len__(self) -> int:
         return len(self.image_paths)
@@ -69,6 +78,9 @@ class CILDataset(Dataset):
 
 
 class CannyDataset(CILDataset):
+    def __init__(self) -> None:
+        return None
+
     def __init__(self, path_to_data : str, test_dataset : bool = False):
         super().__init__(path_to_data, test_dataset)
         self.path_to_data = path_to_data

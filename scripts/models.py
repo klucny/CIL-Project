@@ -121,26 +121,31 @@ class Canny(Net):
 class CannyCNN(CNN, Canny):
     def __init__(self) -> None:
         super(CannyCNN, self).__init__()
-
-        self.edge_conv = nn.Conv2d(1, 256, kernel_size=3, padding=1)
-        self.edge_conv2 = super()._double_conv(256, 1024)
-
-    def edges_forward(self, edges)->torch.Tensor:
-        x = self.conv1(edges)
-        x = self.norm1(x)
-        x = F.relu(x)
-
-        x = self.conv2(x)
-        x = self.norm2(x)
-        x = F.relu(x)
-
-        return x
+        # This is a small encoder to process the Canny edge map.
+        self.edge_encoder = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 2048, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(2048),
+            nn.ReLU(inplace=True)
+        )
 
     # overload of CNN.forward()
     def forward(self, x, edges) -> torch.Tensor:
         pad_size = 8  # needed to bring the pictures to size 572 because otherwise with ResNet size issue will occur
 
         x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
+        edges = F.pad(edges, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
 
         e1 = self.encoder_conv1(x)
         p1 = self.pool(e1)
@@ -150,10 +155,10 @@ class CannyCNN(CNN, Canny):
         e4 = self.encoder_layer3(e3)
         b = self.encoder_layer4(e4)
 
-        edge_emb = self.edge_conv(edges)
-        edge_emb = self.edge_conv2(edge_emb)
+        edge_features = self.edge_encoder(edges)
 
-        b = b*edge_emb
+
+        b = b * edge_features
 
         d4 = self.up_conv4(b)
         d4 = torch.cat([d4, e4], dim=1)

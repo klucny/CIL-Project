@@ -1,7 +1,6 @@
-from torch.utils.data import DataLoader, random_split
-
-from scripts.dataset import CannyDataset
-from scripts.models import CNN, CNNSmall, CannyCNN
+from torch.utils.data import DataLoader, random_split, Dataset
+from scripts.dataset import CannyDataset, CILDataset
+from scripts.models import CNN, CNNSmall, CannyCNN, Canny
 from scripts.train_test import train, eval, run_grading_tests
 from scripts.create_submission import create_results_csv
 import torch
@@ -44,7 +43,10 @@ if __name__ == '__main__':
     NUM_EPOCHS = args.num_epochs
     chosen_model = available_models.get(args.model, CannyCNN)()
 
-
+    if isinstance(chosen_model, Canny):
+        dataset_type : Dataset= CannyDataset.empty_constructor()
+    else:
+        dataset_type : Dataset = CILDataset.empty_constructor()
 
 
     # decided based on arg flag if the grading test should be run.
@@ -56,12 +58,13 @@ if __name__ == '__main__':
 
         if args.student_cluster:
             print("Using student cluster dataset path.")
-            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/test', test_dataset=True)
+            dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/test', test_dataset=True)
         else:
             print("Using local dataset path.")
-            dataset = CannyDataset('./data/monodepth_kaggle2026/test', test_dataset=True)
+            dataset = type(dataset_type)('./data/monodepth_kaggle2026/test', test_dataset=True)
 
         test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+        print(f"Size test dataset: {len(test_loader.dataset)}")
         run_grading_tests(test_loader, grading_model, device=device)
         create_results_csv()
 
@@ -70,10 +73,10 @@ if __name__ == '__main__':
         print("Running eval tests instead of training.")
         if args.student_cluster:
             print("Using student cluster dataset path.")
-            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/train')
+            dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/train')
         else:
             print("Using local dataset path.")
-            dataset = CannyDataset('./data/monodepth_kaggle2026/train')
+            dataset = type(dataset_type)('./data/monodepth_kaggle2026/train')
 
 
         eval_model = type(chosen_model)()
@@ -81,20 +84,19 @@ if __name__ == '__main__':
         eval_model.load_state_dict(weights_dict)
 
         generator = torch.Generator().manual_seed(10)
-        train_dataset, test_dataset = random_split(dataset, [0.8, 0.2], generator=generator)
+        train_dataset, test_dataset= random_split(dataset, [0.8, 0.2], generator=generator)
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
         eval(test_loader, eval_model, device=device)
-
 
 
 
     else:
         if args.student_cluster:
             print("Using student cluster dataset path.")
-            dataset = CannyDataset('/cluster/courses/cil/monocular-depth-estimation/train')
+            dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/train')
         else:
             print("Using local dataset path.")
-            dataset = CannyDataset('./data/monodepth_kaggle2026/train')
+            dataset = type(dataset_type)('./data/monodepth_kaggle2026/train')
 
 
         model = type(chosen_model)()  # Define which model to use
@@ -107,6 +109,7 @@ if __name__ == '__main__':
         test_size = dataset_size - train_size
 
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
+        # train_dataset, test_dataset, bullshit = random_split(dataset, [0.01, 0.01, 0.98], generator=generator)
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
 

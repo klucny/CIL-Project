@@ -48,6 +48,26 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 if (loss.item() < best_loss):
                     best_loss = loss.item()
                     best_model_state: dict = model.state_dict()
+            print(f"Training loss: {train_loss / len(train_loader)}")
+            if best_model_state:
+                print(f"Saving best model")
+                saved_models_path: str = "./models/"
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
+                os.makedirs(saved_models_path, exist_ok=True)
+                torch.save(best_model_state, saved_models_path + model_name)
+
+            # switch model to eval and compute the test loss
+            model.eval()
+            test_loss: float = 0.0
+            with torch.no_grad():
+                for batch_idx, (image, edges, gt) in enumerate(test_loader):
+                    image = image.to(device)
+                    gt = gt.to(device)
+                    edges= edges.to(device)
+                    out = model.forward(image, edges)
+                    loss = model.compute_loss(out, gt)
+                    test_loss += loss.item()
 
         else:
             for batch_idx, (image, gt) in enumerate(train_loader):
@@ -70,25 +90,25 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     best_loss = loss.item()
                     best_model_state: dict = model.state_dict()
 
-        print(f"Training loss: {train_loss / len(train_loader.dataset)}")
-        if best_model_state:
-            print(f"Saving best model")
-            saved_models_path: str = "./models/"
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch}.pth"
-            os.makedirs(saved_models_path, exist_ok=True)
-            torch.save(best_model_state, saved_models_path + model_name)
+            print(f"Training loss: {train_loss / len(train_loader)}")
+            if best_model_state:
+                print(f"Saving best model")
+                saved_models_path: str = "./models/"
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
+                os.makedirs(saved_models_path, exist_ok=True)
+                torch.save(best_model_state, saved_models_path + model_name)
 
-        # switch model to eval and compute the test loss
-        model.eval()
-        test_loss: float = 0.0
-        with torch.no_grad():
-            for batch_idx, (image, gt) in enumerate(test_loader):
-                image = image.to(device)
-                gt = gt.to(device)
-                out = model.forward(image)
-                loss = model.compute_loss(out, gt)
-                test_loss += loss.item()
+            # switch model to eval and compute the test loss
+            model.eval()
+            test_loss: float = 0.0
+            with torch.no_grad():
+                for batch_idx, (image, gt) in enumerate(test_loader):
+                    image = image.to(device)
+                    gt = gt.to(device)
+                    out = model.forward(image)
+                    loss = model.compute_loss(out, gt)
+                    test_loss += loss.item()
 
         print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
 
@@ -121,7 +141,8 @@ def eval(dataloader: DataLoader, model: Net, device: torch.device):
                 print(f"Batch: {batch_idx}/{len(dataloader)}")
                 image = image.to(device)
                 gt = gt.to(device)
-                out = model.forward(image)
+                edges = edges.to(device)
+                out = model.forward(image, edges)
                 loss = model.compute_loss(out, gt)
                 total_loss += loss.item()
         else:
@@ -133,7 +154,7 @@ def eval(dataloader: DataLoader, model: Net, device: torch.device):
                 loss = model.compute_loss(out, gt)
                 total_loss += loss.item()
 
-        print(f"Average loss: {total_loss / len(dataloader.dataset)}")
+        print(f"Average loss: {total_loss / len(dataloader)}")
         model.eval()
 
 
@@ -147,18 +168,26 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
         if isinstance(model, Canny):
             # TODO: adapt to use edges
             for batch_idx, (image, edges, name) in enumerate(data_loader):
-                print(f"Batch: {batch_idx}/{len(data_loader)}")
+                print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
-                out = model.forward(image)
+                edges = edges.to(device)
+                out = model.forward(image, edges)
+
+                # write batch outputs to result folder
+                for idx in range(len(out)):
+                    path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
+                    os.makedirs("./results", exist_ok=True)
+                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
         else:
             for batch_idx, (image, name) in enumerate(data_loader):
-                print(f"Batch: {batch_idx}/{len(data_loader)}")
+                print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 out = model.forward(image)
 
-        for idx in range(len(out)):
-            path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
-            os.makedirs("./results", exist_ok=True)
-            np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+                # write batch outputs to result folder
+                for idx in range(len(out)):
+                    path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
+                    os.makedirs("./results", exist_ok=True)
+                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
 
         print(f"Wrote results to ./results/")
