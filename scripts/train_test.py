@@ -14,7 +14,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     model.to(device)
 
     best_model_state = None
-    best_loss: float = float("inf")
+    best_train_loss: float = float("inf")
+    best_test_loss: float = float("inf")
 
 
     for epoch in range(num_epochs):
@@ -45,17 +46,11 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                         f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
                 # check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
-                if (loss.item() < best_loss):
-                    best_loss = loss.item()
+                if (loss.item() < best_train_loss):
+                    best_train_loss = loss.item()
                     best_model_state: dict = model.state_dict()
+
             print(f"Training loss: {train_loss / len(train_loader)}")
-            if best_model_state:
-                print(f"Saving best model")
-                saved_models_path: str = "./models/"
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
-                os.makedirs(saved_models_path, exist_ok=True)
-                torch.save(best_model_state, saved_models_path + model_name)
 
             # switch model to eval and compute the test loss
             model.eval()
@@ -68,6 +63,14 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     out = model.forward(image, edges)
                     loss = model.compute_loss(out, gt)
                     test_loss += loss.item()
+
+            if best_model_state and test_loss < best_test_loss:
+                print(f"Saving best model")
+                saved_models_path: str = "./models/"
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
+                os.makedirs(saved_models_path, exist_ok=True)
+                torch.save(best_model_state, saved_models_path + model_name)
 
         else:
             for batch_idx, (image, gt) in enumerate(train_loader):
@@ -86,18 +89,12 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                         f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
                 #check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
-                if (loss.item() < best_loss):
-                    best_loss = loss.item()
+                if (loss.item() < best_train_loss):
+                    best_train_loss = loss.item()
                     best_model_state: dict = model.state_dict()
 
             print(f"Training loss: {train_loss / len(train_loader)}")
-            if best_model_state:
-                print(f"Saving best model")
-                saved_models_path: str = "./models/"
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
-                os.makedirs(saved_models_path, exist_ok=True)
-                torch.save(best_model_state, saved_models_path + model_name)
+
 
             # switch model to eval and compute the test loss
             model.eval()
@@ -109,6 +106,16 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     out = model.forward(image)
                     loss = model.compute_loss(out, gt)
                     test_loss += loss.item()
+
+            if best_model_state and test_loss < best_test_loss:
+                print(f"Saving best model")
+                saved_models_path: str = "./models/"
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
+                os.makedirs(saved_models_path, exist_ok=True)
+                torch.save(best_model_state, saved_models_path + model_name)
+
+
 
         print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
 

@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import torchvision.models as torch_models
+from torchvision.models.resnet import conv1x1
 
 
 # Class Net just acts as a superclass for clean typing
@@ -158,10 +159,11 @@ class CannyCNN(CNN, Canny):
         edge_features = self.edge_encoder(edges)
 
 
-        b = b * edge_features
+        # b = b * edge_features
+        b = conv1x1(torch.cat([edge_features, b], dim=1))
 
         d4 = self.up_conv4(b)
-        d4 = torch.cat([d4, e4], dim=1)
+        d4 = torch.cat(torch.cat[d4, e4], dim=1)
         d4 = self.dec_conv4(d4)
 
         d3 = self.up_conv3(d4)

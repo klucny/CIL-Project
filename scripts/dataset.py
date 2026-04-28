@@ -25,6 +25,8 @@ class CILDataset(Dataset):
             if len(self.image_paths) != len(self.np_gt_paths):
                 raise Exception("Number of images and ground truths do not match.")
 
+        self.flipped = False
+
     @classmethod
     def empty_constructor(cls):
         obj = cls.__new__(cls)
@@ -32,6 +34,7 @@ class CILDataset(Dataset):
         obj.test_dataset = False
         obj.image_paths = []
         obj.np_gt_paths = []
+        obj.flipped = False
         return obj
 
     def __len__(self) -> int:
@@ -68,9 +71,11 @@ class CILDataset(Dataset):
                 image_tensor = color_transform(image_tensor)
 
 
+
             if torch.rand(1) < 0.5:
                 image_tensor = vision_F.hflip(image_tensor)
                 ground_truth = vision_F.hflip(ground_truth)
+                self.flipped = True
 
             return image_tensor, ground_truth
 
@@ -109,6 +114,9 @@ class CannyDataset(CILDataset):
             transforms.GaussianBlur(kernel_size=(3, 3), sigma=(0.05, 0.05)),
         ])
         edges_tensor = transformations(edges_tensor)
+
+        if self.flipped:
+            edges_tensor = vision_F.hflip(edges_tensor)
 
         return image_tensor, edges_tensor, gt_or_name
 
