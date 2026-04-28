@@ -175,7 +175,7 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
         if isinstance(model, Canny):
             # TODO: adapt to use edges
             for batch_idx, (image, edges, name) in enumerate(data_loader):
-                print(f"Batch: {batch_idx+1}/{len(data_loader)}")
+                # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 edges = edges.to(device)
                 out = model.forward(image, edges)
@@ -187,7 +187,7 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
                     np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
         else:
             for batch_idx, (image, name) in enumerate(data_loader):
-                print(f"Batch: {batch_idx+1}/{len(data_loader)}")
+                # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 out = model.forward(image)
 

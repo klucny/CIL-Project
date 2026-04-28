@@ -77,6 +77,9 @@ class CILDataset(Dataset):
                 ground_truth = vision_F.hflip(ground_truth)
                 self.flipped = True
 
+            else:
+                self.flipped = False
+
             return image_tensor, ground_truth
 
 

@@ -17,12 +17,9 @@ def create_results_csv() -> None:
     available_dir_in_parent_dir = cur_dir.parent
     pred_dir = Path(f"{available_dir_in_parent_dir}/results/")   # folder with pred_000000.npy, pred_000001.npy,
     out_csv = Path("./submission.csv")
-    print(pred_dir)
     cur_dir = Path(__file__).parent
     available_dir_in_parent_dir = cur_dir.parent
 
-    print(cur_dir)
-    print(available_dir_in_parent_dir)
 
     if pred_dir.is_dir():
         print(f"Found predictions in {pred_dir}")

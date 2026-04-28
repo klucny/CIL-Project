@@ -141,6 +141,8 @@ class CannyCNN(CNN, Canny):
             nn.ReLU(inplace=True)
         )
 
+        self.fusion_conv = nn.Conv2d(in_channels=4096, out_channels=2048, kernel_size=1)
+
     # overload of CNN.forward()
     def forward(self, x, edges) -> torch.Tensor:
         pad_size = 8  # needed to bring the pictures to size 572 because otherwise with ResNet size issue will occur
@@ -160,10 +162,12 @@ class CannyCNN(CNN, Canny):
 
 
         # b = b * edge_features
-        b = conv1x1(torch.cat([edge_features, b], dim=1))
+        b = torch.cat([b, edge_features], dim=1)
+        b = self.fusion_conv(b)
+
 
         d4 = self.up_conv4(b)
-        d4 = torch.cat(torch.cat[d4, e4], dim=1)
+        d4 = torch.cat([d4, e4], dim=1)
         d4 = self.dec_conv4(d4)
 
         d3 = self.up_conv3(d4)
