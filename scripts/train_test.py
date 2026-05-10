@@ -6,12 +6,22 @@ import os
 from datetime import datetime
 import time
 import numpy as np
-
+import wandb
 
 def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epochs: int,
           optimizer: torch.optim.Optimizer, device: torch.device) -> None | str:
     print("Training the model...")
     model.to(device)
+
+    # logging with wandb
+    wandb.init(
+        project="cil-depth-estimation", # This creates a project folder in your WandB dashboard
+        name=model.__class__.__name__,  # This automatically names the run "CannyCNNSkip"
+        config={
+            "epochs": num_epochs,
+            "batch_size": train_loader.batch_size,
+        }
+    )
 
     best_model_state = None
     best_train_loss: float = float("inf")
@@ -41,9 +51,11 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
+                # print current epoch, batch and loss every 2000 batches
                 if batch_idx % 2000 == 0:
-                    print(
-                        f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
+                    print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
+
+                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx})
 
                 # check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
                 if (loss.item() < best_train_loss):
