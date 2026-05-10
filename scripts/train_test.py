@@ -27,6 +27,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     best_train_loss: float = float("inf")
     best_test_loss: float = float("inf")
 
+    # learning rate scheduler
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
@@ -51,7 +53,6 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
-                # print current epoch, batch and loss every 2000 batches
                 if batch_idx % 100 == 0:
                     print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
@@ -129,10 +130,16 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
 
         test_loss_avg = test_loss / len(test_loader)
+        current_lr = optimizer.param_groups[0]['lr']
+
         print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
-        wandb.log({"test_loss": test_loss_avg, "epoch": epoch + 1})
+        print(f"Current Learning Rate: {current_lr}")
+        wandb.log({"test_loss": test_loss_avg, "epoch": epoch + 1, "learning_rate": current_lr})
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
+
+        # learning rate scheduler step
+        scheduler.step()
 
     print("Training finished")
 

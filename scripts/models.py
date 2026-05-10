@@ -191,6 +191,68 @@ class CannyCNN(CNN, Canny):
         return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
 
 
+class ASPP(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(ASPP, self).__init__()
+
+        # We reduce the channels inside the parallel branches to keep memory usage safe
+        mid_channels = 512
+
+        # Branch 1: 1x1 Convolution
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, 1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True)
+        )
+        # Branch 2: 3x3 Convolution, Dilation 6
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, 3, padding=6, dilation=6, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True)
+        )
+        # Branch 3: 3x3 Convolution, Dilation 12
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, 3, padding=12, dilation=12, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True)
+        )
+        # Branch 4: 3x3 Convolution, Dilation 18
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, 3, padding=18, dilation=18, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True)
+        )
+        # Branch 5: Global Average Pooling
+        self.image_pool = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Conv2d(in_channels, mid_channels, 1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        # Final 1x1 convolution to fuse all branches and restore channel count
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(mid_channels * 5, out_channels, 1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        x3 = self.conv3(x)
+        x4 = self.conv4(x)
+
+        # The pooled branch needs to be resized back to the spatial dimensions of the other branches
+        x5 = self.image_pool(x)
+        x5 = F.interpolate(x5, size=x.shape[2:], mode='bilinear', align_corners=False)
+
+        # Concatenate all branches along the channel dimension
+        out = torch.cat([x1, x2, x3, x4, x5], dim=1)
+        out = self.final_conv(out)
+        return out
+
+
 class CannyCNNSkip(CNN, Canny):
     def __init__(self) -> None:
         super(CannyCNNSkip, self).__init__()
@@ -204,6 +266,7 @@ class CannyCNNSkip(CNN, Canny):
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
         )
+        self.aspp = ASPP(2048, 2048)
 
     def forward(self, c, edges) -> torch.Tensor:
         pad_size = 8
@@ -219,6 +282,9 @@ class CannyCNNSkip(CNN, Canny):
         e3 = self.encoder_layer2(e2)
         e4 = self.encoder_layer3(e3)
         b = self.encoder_layer4(e4)
+
+        # ASPP
+        b = self.aspp(b)
 
         # edge features skip connection
         edge_features = self.edge_encoder(edges)
