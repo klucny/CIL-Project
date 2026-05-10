@@ -52,7 +52,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 # print current epoch, batch and loss every 100 batches
                 # print current epoch, batch and loss every 2000 batches
-                if batch_idx % 2000 == 0:
+                if batch_idx % 100 == 0:
                     print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
                     wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx})
@@ -128,8 +128,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 torch.save(best_model_state, saved_models_path + model_name)
 
 
-
+        test_loss_avg = test_loss / len(test_loader)
         print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
+        wandb.log({"test_loss": test_loss_avg, "epoch": epoch + 1})
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
 
