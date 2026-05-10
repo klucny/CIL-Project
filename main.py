@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader, random_split, Dataset
 from scripts.dataset import CannyDataset, CILDataset
-from scripts.models import CNN, CNNSmall, CannyCNN, Canny
+from scripts.models import CNN, CNNSmall, CannyCNN, Canny, CannyCNNSkip
 from scripts.train_test import train, eval, run_grading_tests
 from scripts.create_submission import create_results_csv
 import torch
@@ -34,6 +34,7 @@ if __name__ == '__main__':
         "CNN": CNN,
         "CNNSmall": CNNSmall,
         "CannyCNN": CannyCNN,
+        "CannyCNNSkip": CannyCNNSkip,
     }
 
     # set base variables

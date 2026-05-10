@@ -191,6 +191,65 @@ class CannyCNN(CNN, Canny):
         return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
 
 
+class CannyCNNSkip(CNN, Canny):
+    def __init__(self) -> None:
+        super(CannyCNNSkip, self).__init__()
+
+        # edge encoder
+        self.edge_encoder = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(16, 64, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, c, edges) -> torch.Tensor:
+        pad_size = 8
+
+        c = F.pad(c, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
+        edges = F.pad(edges, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
+
+        # standard RGB encoder
+        e1 = self.encoder_conv1(c)
+        p1 = self.pool(e1)
+
+        e2 = self.encoder_layer1(p1)
+        e3 = self.encoder_layer2(e2)
+        e4 = self.encoder_layer3(e3)
+        b = self.encoder_layer4(e4)
+
+        # edge features skip connection
+        edge_features = self.edge_encoder(edges)
+        e1 = e1 + edge_features
+
+        # standard decoder
+        d4 = self.up_conv4(b)
+        d4 = torch.cat([d4, e4], dim=1)
+        d4 = self.dec_conv4(d4)
+
+        d3 = self.up_conv3(d4)
+        d3 = torch.cat([d3, e3], dim=1)
+        d3 = self.dec_conv3(d3)
+
+        d2 = self.up_conv2(d3)
+        d2 = torch.cat([d2, e2], dim=1)
+        d2 = self.dec_conv2(d2)
+
+        d1 = self.up_conv1(d2)
+        d1 = torch.cat([d1, e1], dim=1)
+        d1 = self.dec_conv1(d1)
+
+        d0 = self.up_conv0(d1)
+        d0 = self.dec_conv0(d0)
+
+        out = self.out_conv(d0)
+        out = F.softplus(out) + 1e-4
+
+        return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
+
+
 class CNNSmall(Net):
     def __init__(self) -> None:
         super(CNNSmall, self).__init__()
