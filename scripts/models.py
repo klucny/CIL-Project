@@ -29,6 +29,7 @@ class Net(nn.Module):
             raise Exception("No valid pixels in given image, cannot compute loss")
 
         preds_safe = torch.clamp(pred, min=eps)
+        target_safe = torch.clamp(target, min=eps)
 
         log_gt_filtered = torch.log(target[gt_mask])
         log_pred_filtered = torch.log(preds_safe[gt_mask])
@@ -41,7 +42,7 @@ class Net(nn.Module):
 
         # Gradients
         pred_padded = F.pad(torch.log(preds_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
-        target_padded = F.pad(torch.log(target).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
+        target_padded = F.pad(torch.log(target_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
         gradient_x_predicted = F.conv2d(pred_padded, self.sobel_x)
         gradient_y_predicted = F.conv2d(pred_padded, self.sobel_y)
         gradient_x_groundtruth = F.conv2d(target_padded, self.sobel_x)
