@@ -11,6 +11,12 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
 
+        # sobel filters for gradient computation
+        sobel_x = torch.tensor([[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
+        sobel_y = torch.tensor([[[ -1, -2, -1], [0, 0, 0], [1, 2, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
+        self.register_buffer('sobel_x', sobel_x)
+        self.register_buffer('sobel_y', sobel_y)
+
     def forward(self, x) -> torch.Tensor:
         return x
 
@@ -31,9 +37,23 @@ class Net(nn.Module):
 
         alpha: torch.Tensor = torch.mean(-diffs)
 
-        loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
+        sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
-        return loss
+        # Gradients
+        pred_padded = F.pad(preds_safe.unsqueeze(1), (1, 1, 1, 1), mode='replicate')
+        target_padded = F.pad(target.unsqueeze(1), (1, 1, 1, 1), mode='replicate')
+        gradient_x_predicted = F.conv2d(pred_padded, self.sobel_x)
+        gradient_y_predicted = F.conv2d(pred_padded, self.sobel_y)
+        gradient_x_groundtruth = F.conv2d(target_padded, self.sobel_x)
+        gradient_y_groundtruth = F.conv2d(target_padded, self.sobel_y)
+
+        # compute gradient loss
+        gradient_diff_x = torch.abs(gradient_x_predicted - gradient_x_groundtruth)
+        gradient_diff_y = torch.abs(gradient_y_predicted - gradient_y_groundtruth)
+
+        gradient_loss = torch.mean(gradient_diff_x[gt_mask.unsqueeze(1)]) + torch.mean(gradient_diff_y[gt_mask.unsqueeze(1)])
+
+        return sirmse_loss + 0.5 * gradient_loss
 
 
 class CNN(Net):
