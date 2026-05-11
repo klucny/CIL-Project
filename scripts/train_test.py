@@ -30,6 +30,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     # learning rate scheduler
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
+    # mixed precision training with torch.amp
+    scaler = torch.amp.GradScaler('cuda')
+
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
         model.train()
@@ -46,10 +49,14 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 optimizer.zero_grad()
 
-                out = model.forward(image, edges)
-                loss = model.compute_loss(out, gt)
-                loss.backward()
-                optimizer.step()
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image, edges)
+                    loss = model.compute_loss(out, gt)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
@@ -73,8 +80,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     image = image.to(device)
                     gt = gt.to(device)
                     edges= edges.to(device)
-                    out = model.forward(image, edges)
-                    loss = model.compute_loss(out, gt)
+                    with torch.amp.autocast('cuda'):
+                        out = model.forward(image, edges)
+                        loss = model.compute_loss(out, gt)
                     test_loss += loss.item()
 
             if best_model_state and test_loss < best_test_loss:
@@ -90,10 +98,12 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 image = image.to(device)
                 gt = gt.to(device)
                 optimizer.zero_grad()
-                out = model.forward(image)
-                loss = model.compute_loss(out, gt)
-                loss.backward()
-                optimizer.step()
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image)
+                    loss = model.compute_loss(out, gt)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
@@ -116,8 +126,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 for batch_idx, (image, gt) in enumerate(test_loader):
                     image = image.to(device)
                     gt = gt.to(device)
-                    out = model.forward(image)
-                    loss = model.compute_loss(out, gt)
+                    with torch.amp.autocast('cuda'):
+                        out = model.forward(image)
+                        loss = model.compute_loss(out, gt)
                     test_loss += loss.item()
 
             if best_model_state and test_loss < best_test_loss:
@@ -169,16 +180,18 @@ def eval(dataloader: DataLoader, model: Net, device: torch.device):
                 image = image.to(device)
                 gt = gt.to(device)
                 edges = edges.to(device)
-                out = model.forward(image, edges)
-                loss = model.compute_loss(out, gt)
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image, edges)
+                    loss = model.compute_loss(out, gt)
                 total_loss += loss.item()
         else:
             for batch_idx, (image, gt) in enumerate(dataloader):
                 print(f"Batch: {batch_idx}/{len(dataloader)}")
                 image = image.to(device)
                 gt = gt.to(device)
-                out = model.forward(image)
-                loss = model.compute_loss(out, gt)
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image)
+                    loss = model.compute_loss(out, gt)
                 total_loss += loss.item()
 
         print(f"Average loss: {total_loss / len(dataloader)}")
@@ -198,23 +211,27 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
                 # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 edges = edges.to(device)
-                out = model.forward(image, edges)
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image, edges)
 
                 # write batch outputs to result folder
                 for idx in range(len(out)):
                     path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
                     os.makedirs("./results", exist_ok=True)
-                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+                    # float32 apparently prevents weird edge case error
+                    np.save(path_to_test_result, out[idx, :, :].to(torch.float32).cpu().numpy())
         else:
             for batch_idx, (image, name) in enumerate(data_loader):
                 # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
-                out = model.forward(image)
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image)
 
                 # write batch outputs to result folder
                 for idx in range(len(out)):
                     path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
                     os.makedirs("./results", exist_ok=True)
-                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+                    # float32 apparently prevents weird edge case error
+                    np.save(path_to_test_result, out[idx, :, :].to(torch.float32).cpu().numpy())
 
         print(f"Wrote results to ./results/")

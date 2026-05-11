@@ -11,6 +11,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Monocular Depth Estimation Training')
     parser.add_argument('--student-cluster', action='store_true',
                         help='Use the student cluster dataset path')
+    
     parser.add_argument('--batch-size', type=int, default=8,
                         help='Integer value for batch size (default: 8)')
 
@@ -28,6 +29,10 @@ if __name__ == '__main__':
 
     parser.add_argument("--eval", type=str, default=None,
                         help="Run eval, given the name of the checkpoint, on the whole dataset.")
+    
+    parser.add_argument("--debug-subset", action='store_true',
+                    help="Use a small subset of the data for quick debugging.")
+
     args = parser.parse_args()
 
     available_models = {
@@ -39,10 +44,11 @@ if __name__ == '__main__':
 
     # set base variables
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
     BATCH_SIZE = args.batch_size
     TRAIN_TEST_SPLIT_RATIO = 0.8  # e.g. 0.8 -> 80% of the data used for training, 20% for testing
     NUM_EPOCHS = args.num_epochs
-    chosen_model = available_models.get(args.model, CannyCNN)()
+    chosen_model = available_models.get(args.model, CannyCNNSkip)() # default to CannyCNNSkip as it is the best
 
     if isinstance(chosen_model, Canny):
         dataset_type : Dataset= CannyDataset.empty_constructor()
@@ -64,7 +70,7 @@ if __name__ == '__main__':
             print("Using local dataset path.")
             dataset = type(dataset_type)('./data/monodepth_kaggle2026/test', test_dataset=True)
 
-        test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+        test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True)
         print(f"Size test dataset: {len(test_loader.dataset)}")
         run_grading_tests(test_loader, grading_model, device=device)
         create_results_csv()
@@ -86,7 +92,7 @@ if __name__ == '__main__':
 
         generator = torch.Generator().manual_seed(10)
         train_dataset, test_dataset= random_split(dataset, [0.8, 0.2], generator=generator)
-        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
         eval(test_loader, eval_model, device=device)
 
 
@@ -110,9 +116,13 @@ if __name__ == '__main__':
         test_size = dataset_size - train_size
 
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
+        if args.debug_subset:
+            print("Using a small subset of the data for quick debugging and testing.")
+            train_dataset = torch.utils.data.Subset(train_dataset, range(0, min(500, len(train_dataset))))
+            test_dataset = torch.utils.data.Subset(test_dataset, range(0, min(500, len(test_dataset))))
         # train_dataset, test_dataset, bullshit = random_split(dataset, [0.01, 0.01, 0.98], generator=generator)
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
-        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
+        test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
