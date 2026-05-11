@@ -309,6 +309,10 @@ class CannyCNNSkip(CNN, Canny):
             nn.ReLU(inplace=True),
         )
         self.aspp = ASPP(2048, 2048)
+        self.attention_gate = nn.Sequential(
+            nn.Conv2d(64 + 64, 64, kernel_size=1), # e1 has 64 channels, edge_features has 64
+            nn.Sigmoid()
+        )
 
     def forward(self, c, edges) -> torch.Tensor:
         pad_size = 8
@@ -330,7 +334,9 @@ class CannyCNNSkip(CNN, Canny):
 
         # edge features skip connection
         edge_features = self.edge_encoder(edges)
-        e1 = e1 + edge_features
+        concat_features = torch.cat([e1, edge_features], dim=1)
+        attn_mask = self.attention_gate(concat_features)
+        e1 = e1 + (edge_features * attn_mask) # Only add the edges the network thinks are useful!
 
         # standard decoder
         d4 = self.up_conv4(b)
