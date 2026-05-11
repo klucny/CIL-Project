@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 import torchvision.models as torch_models
 from torchvision.models.resnet import conv1x1
+import copy
 
 
 # Class Net just acts as a superclass for clean typing
@@ -20,7 +21,7 @@ class Net(nn.Module):
     def forward(self, x) -> torch.Tensor:
         return x
 
-    def compute_loss(self, pred, target, eps=1e-9) -> torch.Tensor:
+    def compute_loss(self, pred, target, grad_weight=0.0, eps=1e-9) -> tuple:
         gt_mask = (target > eps)
 
         num_valid_pixels = torch.sum(gt_mask)
@@ -40,6 +41,9 @@ class Net(nn.Module):
 
         sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
+        if grad_weight <= 0.0:
+            return sirmse_loss, sirmse_loss, torch.tensor(0.0)
+
         # Gradients
         pred_padded = F.pad(torch.log(preds_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
         target_padded = F.pad(torch.log(target_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
@@ -54,7 +58,9 @@ class Net(nn.Module):
 
         gradient_loss = torch.mean(gradient_diff_x[gt_mask.unsqueeze(1)]) + torch.mean(gradient_diff_y[gt_mask.unsqueeze(1)])
 
-        return sirmse_loss + 0.1 * gradient_loss
+        total_loss = sirmse_loss + grad_weight * gradient_loss
+
+        return total_loss, sirmse_loss, gradient_loss
 
 
 class CNN(Net):
@@ -73,19 +79,34 @@ class CNN(Net):
         self.encoder_layer4 = resnet.layer4
 
         # Decoder
-        self.up_conv4 = nn.ConvTranspose2d(2048, 1024, stride=2, kernel_size=2)
+        self.up_conv4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(2048, 1024, kernel_size=3, padding=1)
+        )
         self.dec_conv4 = self._double_conv(2048, 1024)
 
-        self.up_conv3 = nn.ConvTranspose2d(1024, 512, stride=2, kernel_size=2)
+        self.up_conv3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(1024, 512, kernel_size=3, padding=1)
+        )
         self.dec_conv3 = self._double_conv(1024, 512)
 
-        self.up_conv2 = nn.ConvTranspose2d(512, 256, stride=2, kernel_size=2)
+        self.up_conv2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1)
+        )
         self.dec_conv2 = self._double_conv(512, 256)
 
-        self.up_conv1 = nn.ConvTranspose2d(256, 64, stride=2, kernel_size=2)
+        self.up_conv1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(256, 64, kernel_size=3, padding=1)
+        )
         self.dec_conv1 = self._double_conv(128, 64)
 
-        self.up_conv0 = nn.ConvTranspose2d(64, 32, stride=2, kernel_size=2)
+        self.up_conv0 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        )
         self.dec_conv0 = self._double_conv(32, 32)
 
         self.out_conv = nn.Conv2d(32, 1, kernel_size=1)

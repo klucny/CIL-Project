@@ -33,10 +33,18 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     # mixed precision training with torch.amp
     scaler = torch.amp.GradScaler('cuda')
 
+    start_gradient_weight_epoch = int(num_epochs * 0.2)
+    ramp_up_gradient_weight_epochs = max(1, int(num_epochs * 0.2))
+
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
         model.train()
         train_loss: float = 0.0
+
+        if epoch < start_gradient_weight_epoch:
+            current_grad_weight = 0.0
+        else:
+            current_grad_weight = min(0.1, 0.1 * ((epoch - start_gradient_weight_epoch) / ramp_up_gradient_weight_epochs))
 
         print(f"Epoch: {epoch + 1}/{num_epochs}")
 
@@ -51,7 +59,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image, edges)
-                    loss = model.compute_loss(out, gt)
+                    loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -63,12 +71,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 if batch_idx % 100 == 0:
                     print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
-                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx})
-
-                # check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
-                if (loss.item() < best_train_loss):
-                    best_train_loss = loss.item()
-                    best_model_state: dict = model.state_dict()
+                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx, "grad_weight": current_grad_weight, "sirmse_loss": sirmse_loss.item(), "gradient_loss": gradient_loss.item()})
 
             print(f"Training loss: {train_loss / len(train_loader)}")
 
@@ -82,14 +85,20 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     edges= edges.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image, edges)
-                        loss = model.compute_loss(out, gt)
+                        loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt)
                     test_loss += loss.item()
 
-            if best_model_state and test_loss < best_test_loss:
-                print(f"Saving best model")
+            test_loss_avg = test_loss / len(test_loader)
+
+            # ONLY update the best model state here, based on test performance
+            if test_loss_avg < best_test_loss:
+                best_test_loss = test_loss_avg
+                best_model_state = copy.deepcopy(model.state_dict())
+
+                print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
                 saved_models_path: str = "./models/"
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
                 os.makedirs(saved_models_path, exist_ok=True)
                 torch.save(best_model_state, saved_models_path + model_name)
 
@@ -100,21 +109,16 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 optimizer.zero_grad()
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image)
-                    loss = model.compute_loss(out, gt)
+                    loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
-                if batch_idx % 2000 == 0:
+                if batch_idx % 100 == 0:
                     print(
                         f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
-
-                #check if a better model is found and save its state dict if so (TODO: check if this actually improves the results or just leads to overfitting)
-                if (loss.item() < best_train_loss):
-                    best_train_loss = loss.item()
-                    best_model_state: dict = model.state_dict()
 
             print(f"Training loss: {train_loss / len(train_loader)}")
 
@@ -128,11 +132,17 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     gt = gt.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image)
-                        loss = model.compute_loss(out, gt)
+                        loss, _, _ = model.compute_loss(out, gt)
                     test_loss += loss.item()
 
-            if best_model_state and test_loss < best_test_loss:
-                print(f"Saving best model")
+            test_loss_avg = test_loss / len(test_loader)
+
+            # ONLY update the best model state here, based on test performance
+            if test_loss_avg < best_test_loss:
+                best_test_loss = test_loss_avg
+                best_model_state = copy.deepcopy(model.state_dict())
+
+                print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
                 saved_models_path: str = "./models/"
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
