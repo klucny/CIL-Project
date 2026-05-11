@@ -13,6 +13,11 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     print("Training the model...")
     model.to(device)
 
+    # 1. Generate a single timestamp for this entire run
+    run_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    saved_models_path: str = "./models/"
+    os.makedirs(saved_models_path, exist_ok=True)
+
     # logging with wandb
     wandb.init(
         project="cil-depth-estimation", # This creates a project folder in your WandB dashboard
@@ -86,7 +91,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image, edges)
                         loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt)
-                    test_loss += loss.item()
+                    test_loss += sirmse_loss.item()
 
             test_loss_avg = test_loss / len(test_loader)
 
@@ -96,10 +101,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 best_model_state = copy.deepcopy(model.state_dict())
 
                 print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
-                saved_models_path: str = "./models/"
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
-                os.makedirs(saved_models_path, exist_ok=True)
+                # 2. Use the run_timestamp instead of generating a new one
+                model_name: str = f"{model.__class__.__name__}_best_{run_timestamp}_epoch_{epoch + 1}.pth"
                 torch.save(best_model_state, saved_models_path + model_name)
 
         else:
@@ -132,21 +135,18 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     gt = gt.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image)
-                        loss, _, _ = model.compute_loss(out, gt)
-                    test_loss += loss.item()
+                        loss, sirmse_loss, _ = model.compute_loss(out, gt)
+                    test_loss += sirmse_loss.item()
 
             test_loss_avg = test_loss / len(test_loader)
 
-            # ONLY update the best model state here, based on test performance
             if test_loss_avg < best_test_loss:
                 best_test_loss = test_loss_avg
                 best_model_state = copy.deepcopy(model.state_dict())
 
                 print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
-                saved_models_path: str = "./models/"
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
-                os.makedirs(saved_models_path, exist_ok=True)
+                # 2. Use the run_timestamp instead of generating a new one
+                model_name: str = f"{model.__class__.__name__}_best_{run_timestamp}_epoch_{epoch + 1}.pth"
                 torch.save(best_model_state, saved_models_path + model_name)
 
 
@@ -159,18 +159,31 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
 
-        # learning rate scheduler step
+        # 3. Cleanup logic: Delete epoch % 5 != 0 models when we reach a multiple of 5
+        current_epoch = epoch + 1
+        if current_epoch % 5 == 0:
+            print(f"--- Running cleanup for intermediate models (Epoch {current_epoch}) ---")
+            for f in os.listdir(saved_models_path):
+                # Ensure we only touch files from THIS run that have an epoch number
+                if run_timestamp in f and "_epoch_" in f:
+                    try:
+                        # Extract the epoch number from the filename
+                        ep_str = f.split("_epoch_")[1].split(".pth")[0]
+                        ep_num = int(ep_str)
+                        # Delete if it's not a multiple of 5
+                        if ep_num % 5 != 0:
+                            os.remove(os.path.join(saved_models_path, f))
+                            print(f"Cleaned up space: Deleted {f}")
+                    except ValueError:
+                        pass # Ignore if filename structure is somehow unexpected
+
         scheduler.step()
 
     print("Training finished")
 
     if best_model_state:
-        # Save weights of the best model
-        print("Saving best model")
-        saved_models_path: str = "./models/"
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        model_name: str = f"{model.__class__.__name__}_best_{timestamp}.pth"
-        os.makedirs(saved_models_path, exist_ok=True)
+        print("Saving final best model")
+        model_name: str = f"{model.__class__.__name__}_best_{run_timestamp}_final.pth"
         torch.save(best_model_state, saved_models_path + model_name)
 
         return saved_models_path + model_name
