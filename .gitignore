@@ -1,2 +1,7 @@
 ./data
 ./results
+*.pyc
+/data
+/models
+/results
+submission.csv

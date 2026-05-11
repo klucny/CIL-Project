@@ -7,6 +7,7 @@ from torchvision import transforms
 import torchvision.transforms.functional as vision_F
 import os
 import cv2 as cv
+cv.setNumThreads(0)
 import numpy as np
 
 

@@ -16,6 +16,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     best_model_state = None
     best_train_loss: float = float("inf")
     best_test_loss: float = float("inf")
+    # NEEDED FOR AMP
+    scaler = torch.amp.GradScaler('cuda')
 
 
     for epoch in range(num_epochs):
@@ -34,14 +36,19 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 optimizer.zero_grad()
 
-                out = model.forward(image, edges)
-                loss = model.compute_loss(out, gt)
-                loss.backward()
-                optimizer.step()
+                # Reduce precsion for faster training with AMP
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image, edges)
+                    loss = model.compute_loss(out, gt)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
                 train_loss += loss.item()
 
-                # print current epoch, batch and loss every 100 batches
-                if batch_idx % 2000 == 0:
+                # print current epoch, batch and loss
+                if batch_idx % 50 == 0:
                     print(
                         f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
@@ -58,14 +65,23 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
             with torch.no_grad():
                 for batch_idx, (image, edges, gt) in enumerate(test_loader):
                     image = image.to(device)
+                    edges = edges.to(device)
                     gt = gt.to(device)
-                    edges= edges.to(device)
-                    out = model.forward(image, edges)
-                    loss = model.compute_loss(out, gt)
+                    
+                    # AMP 
+                    with torch.amp.autocast('cuda'):
+                        out = model.forward(image, edges)
+                        loss = model.compute_loss(out, gt)
+                        
                     test_loss += loss.item()
-
-            if best_model_state and test_loss < best_test_loss:
-                print(f"Saving best model")
+                    
+                    if batch_idx % 50 == 0:
+                        print(f'   Test Batch [{batch_idx}/{len(test_loader)}], Temp Loss: {loss.item():.4f}')
+        
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                best_model_state = model.state_dict() # GRAB STATE HERE
+                print(f"Saving best model (Test loss improved)")
                 saved_models_path: str = "./models/"
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
@@ -77,10 +93,16 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 image = image.to(device)
                 gt = gt.to(device)
                 optimizer.zero_grad()
-                out = model.forward(image)
-                loss = model.compute_loss(out, gt)
-                loss.backward()
-                optimizer.step()
+
+                # AMP Autocast
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image)
+                    loss = model.compute_loss(out, gt)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
@@ -100,18 +122,28 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
             model.eval()
             test_loss: float = 0.0
             with torch.no_grad():
-                for batch_idx, (image, gt) in enumerate(test_loader):
+                for batch_idx, (image, edges, gt) in enumerate(test_loader):
                     image = image.to(device)
+                    edges = edges.to(device)
                     gt = gt.to(device)
-                    out = model.forward(image)
-                    loss = model.compute_loss(out, gt)
+                    
+                    # AMP
+                    with torch.amp.autocast('cuda'):
+                        out = model.forward(image, edges)
+                        loss = model.compute_loss(out, gt)
+                        
                     test_loss += loss.item()
+                    
+                    if batch_idx % 50 == 0:
+                        print(f'   Test Batch [{batch_idx}/{len(test_loader)}], Temp Loss: {loss.item():.4f}')
 
-            if best_model_state and test_loss < best_test_loss:
-                print(f"Saving best model")
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                best_model_state = model.state_dict() # GRAB STATE HERE
+                print(f"Saving best model (Test loss improved)")
                 saved_models_path: str = "./models/"
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch + 1}.pth"
+                model_name: str = f"{model.__class__.__name__}_best_{timestamp}_epoch_{epoch+1}.pth"
                 os.makedirs(saved_models_path, exist_ok=True)
                 torch.save(best_model_state, saved_models_path + model_name)
 
@@ -173,28 +205,31 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
     # check which type of dataset it is (Canny or CIL)
     with torch.no_grad():
         if isinstance(model, Canny):
-            # TODO: adapt to use edges
             for batch_idx, (image, edges, name) in enumerate(data_loader):
-                # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 edges = edges.to(device)
-                out = model.forward(image, edges)
+                
+                # AMP
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image, edges)
 
-                # write batch outputs to result folder
                 for idx in range(len(out)):
                     path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
                     os.makedirs("./results", exist_ok=True)
-                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+                    # float32 apparently prevents weird edge case error
+                    np.save(path_to_test_result, out[idx, :, :].to(torch.float32).cpu().numpy())
         else:
             for batch_idx, (image, name) in enumerate(data_loader):
-                # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
-                out = model.forward(image)
+                
+                # AMP
+                with torch.amp.autocast('cuda'):
+                    out = model.forward(image)
 
-                # write batch outputs to result folder
                 for idx in range(len(out)):
                     path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
                     os.makedirs("./results", exist_ok=True)
-                    np.save(path_to_test_result, out[idx, :, :].cpu().numpy())
+                    # float32 apparently prevents weird edge case error
+                    np.save(path_to_test_result, out[idx, :, :].to(torch.float32).cpu().numpy())
 
         print(f"Wrote results to ./results/")
