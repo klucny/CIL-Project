@@ -40,8 +40,8 @@ class Net(nn.Module):
         sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
         # Gradients
-        pred_padded = F.pad(preds_safe.unsqueeze(1), (1, 1, 1, 1), mode='replicate')
-        target_padded = F.pad(target.unsqueeze(1), (1, 1, 1, 1), mode='replicate')
+        pred_padded = F.pad(torch.log(preds_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
+        target_padded = F.pad(torch.log(target).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
         gradient_x_predicted = F.conv2d(pred_padded, self.sobel_x)
         gradient_y_predicted = F.conv2d(pred_padded, self.sobel_y)
         gradient_x_groundtruth = F.conv2d(target_padded, self.sobel_x)
@@ -53,7 +53,7 @@ class Net(nn.Module):
 
         gradient_loss = torch.mean(gradient_diff_x[gt_mask.unsqueeze(1)]) + torch.mean(gradient_diff_y[gt_mask.unsqueeze(1)])
 
-        return sirmse_loss + 0.5 * gradient_loss
+        return sirmse_loss + 0.1 * gradient_loss
 
 
 class CNN(Net):
