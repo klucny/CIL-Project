@@ -7,6 +7,7 @@ from datetime import datetime
 import time
 import numpy as np
 import wandb
+import copy
 
 def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epochs: int,
           optimizer: torch.optim.Optimizer, device: torch.device) -> None | str:
