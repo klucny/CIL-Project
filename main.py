@@ -116,7 +116,7 @@ if __name__ == '__main__':
             dataset = type(dataset_type)('./data/monodepth_kaggle2026/train')
 
 
-        model = type(chosen_model)()  # Define which model to use
+        model = type(chosen_model)().to(device)  # Define which model to use
 
         # generate the test and training datasets
         generator = torch.Generator().manual_seed(10)
@@ -133,6 +133,10 @@ if __name__ == '__main__':
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                 start_epoch = checkpoint["epoch"]
+                for state in optimizer.state.values():
+                    for k, v in state.items():
+                        if isinstance(v, torch.Tensor):
+                            state[k] = v.to(device)
             else:
                 print("Warning: Loading old-style weights-only checkpoint. Optimizer starting from scratch.")
                 model.load_state_dict(checkpoint)
