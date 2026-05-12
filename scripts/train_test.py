@@ -246,8 +246,15 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
                 image = image.to(device)
                 edges = edges.to(device)
                 with torch.amp.autocast('cuda'):
-                    out = model.forward(image, edges)
+                    # Small flip trick to improve performance if the model predicts slightly better on one side of the image than the other (e.g. due to positional encoding or similar)
+                    out_standard = model.forward(image, edges)
+                    image_flipped = torch.flip(image, dims=[3])
+                    edges_flipped = torch.flip(edges, dims=[3])
+                    out_flipped = model.forward(image_flipped, edges_flipped)
+                    out_unflipped = torch.flip(out_flipped, dims=[2])
+                    out = (out_standard + out_unflipped) / 2.0
 
+                
                 # write batch outputs to result folder
                 for idx in range(len(out)):
                     path_to_test_result: str = os.path.join("./results", "test_" + str(name[idx]) + ".npy")
@@ -259,7 +266,12 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
                 # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
                 image = image.to(device)
                 with torch.amp.autocast('cuda'):
-                    out = model.forward(image)
+                    # Same trick as above
+                    out_standard = model.forward(image)
+                    image_flipped = torch.flip(image, dims=[3])
+                    out_flipped = model.forward(image_flipped)
+                    out_unflipped = torch.flip(out_flipped, dims=[2])
+                    out = (out_standard + out_unflipped) / 2.0
 
                 # write batch outputs to result folder
                 for idx in range(len(out)):
