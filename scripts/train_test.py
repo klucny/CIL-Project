@@ -10,8 +10,10 @@ import wandb
 import copy
 
 def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epochs: int,
-          optimizer: torch.optim.Optimizer, device: torch.device) -> None | str:
+          optimizer: torch.optim.Optimizer, device: torch.device, start_epoch: int = 0, cleanup: int = 5) -> None | str:
     print("Training the model...")
+    if cleanup > 0:
+        print (f"Checkpoint cleanup enabled: Old checkpoints will be deleted every {cleanup} epochs.")
     model.to(device)
 
     # 1. Generate a single timestamp for this entire run
@@ -42,7 +44,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     start_gradient_weight_epoch = int(num_epochs * 0.2)
     ramp_up_gradient_weight_epochs = max(1, int(num_epochs * 0.2))
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.time()
         model.train()
         train_loss: float = 0.0
@@ -99,7 +101,11 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
             # ONLY update the best model state here, based on test performance
             if test_loss_avg < best_test_loss:
                 best_test_loss = test_loss_avg
-                best_model_state = copy.deepcopy(model.state_dict())
+                best_model_state: dict = {
+                        'epoch': epoch + 1,
+                        'model_state_dict': copy.deepcopy(model.state_dict()),
+                        'optimizer_state_dict': copy.deepcopy(optimizer.state_dict())
+                    }
 
                 print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
                 # 2. Use the run_timestamp instead of generating a new one
@@ -143,7 +149,11 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
             if test_loss_avg < best_test_loss:
                 best_test_loss = test_loss_avg
-                best_model_state = copy.deepcopy(model.state_dict())
+                best_model_state: dict = {
+                    'epoch': epoch + 1,
+                    'model_state_dict': copy.deepcopy(model.state_dict()),
+                    'optimizer_state_dict': copy.deepcopy(optimizer.state_dict())
+                }
 
                 print(f"New best test loss ({best_test_loss:.4f})! Saving best model...")
                 # 2. Use the run_timestamp instead of generating a new one
@@ -160,9 +170,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
 
-        # 3. Cleanup logic: Delete epoch % 5 != 0 models when we reach a multiple of 5
+        # 3. Cleanup logic: Delete epoch % cleanup checkpoints that belong to this run - if cleanup is 0, this is disabled
         current_epoch = epoch + 1
-        if current_epoch % 5 == 0:
+        if cleanup > 0 and current_epoch % cleanup == 0:
             print(f"--- Running cleanup for intermediate models (Epoch {current_epoch}) ---")
             for f in os.listdir(saved_models_path):
                 # Ensure we only touch files from THIS run that have an epoch number
@@ -171,8 +181,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                         # Extract the epoch number from the filename
                         ep_str = f.split("_epoch_")[1].split(".pth")[0]
                         ep_num = int(ep_str)
-                        # Delete if it's not a multiple of 5
-                        if ep_num % 5 != 0:
+                        # Delete if it's not a multiple of cleanup
+                        if ep_num % cleanup != 0:
                             os.remove(os.path.join(saved_models_path, f))
                             print(f"Cleaned up space: Deleted {f}")
                     except ValueError:

@@ -31,7 +31,13 @@ if __name__ == '__main__':
                         help="Run eval, given the name of the checkpoint, on the whole dataset.")
     
     parser.add_argument("--debug-subset", action='store_true',
-                    help="Use a small subset of the data for quick debugging.")
+                        help="Use a small subset of the data for quick debugging.")
+    
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Name of the checkpoint file in ./models to resume training from.")
+
+    parser.add_argument("--cleanup", type=int, default=5,
+                        help="After how many epochs to clean up old checkpoints (default: 5). Set to 0 to disable cleanup.")
 
     args = parser.parse_args()
 
@@ -61,6 +67,8 @@ if __name__ == '__main__':
         print("Running grading tests instead of training.")
         grading_model = type(chosen_model)()
         weights_dict = torch.load(os.path.join("./models", args.checkpoint), map_location=torch.device(device))
+        if "model_state_dict" in weights_dict:
+            weights_dict = weights_dict["model_state_dict"]
         grading_model.load_state_dict(weights_dict)
 
         if args.student_cluster:
@@ -88,6 +96,8 @@ if __name__ == '__main__':
 
         eval_model = type(chosen_model)()
         weights_dict = torch.load(os.path.join("./models", args.eval), map_location=torch.device(device))
+        if "model_state_dict" in weights_dict:
+            weights_dict = weights_dict["model_state_dict"]
         eval_model.load_state_dict(weights_dict)
 
         generator = torch.Generator().manual_seed(10)
@@ -110,6 +120,22 @@ if __name__ == '__main__':
 
         # generate the test and training datasets
         generator = torch.Generator().manual_seed(10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+
+        # Resume training
+        start_epoch = 0
+        if args.resume:
+            checkpoint_path = os.path.join("./models", args.resume)
+            print(f"Resuming training from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            # Support loading both the new full checkpoints and your old weights-only files
+            if "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                start_epoch = checkpoint["epoch"]
+            else:
+                print("Warning: Loading old-style weights-only checkpoint. Optimizer starting from scratch.")
+                model.load_state_dict(checkpoint)
 
         dataset_size = len(dataset)
         train_size = int(TRAIN_TEST_SPLIT_RATIO * dataset_size)
@@ -124,9 +150,7 @@ if __name__ == '__main__':
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-
         path_to_best_model: str = train(train_loader, test_loader, model, num_epochs=NUM_EPOCHS, optimizer=optimizer,
-                                        device=device)
+                                        device=device, start_epoch=start_epoch, cleanup=args.cleanup)
 
 
