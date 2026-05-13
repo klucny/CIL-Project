@@ -21,7 +21,7 @@ class Net(nn.Module):
     def forward(self, x) -> torch.Tensor:
         return x
 
-    def compute_loss(self, pred, target, grad_weight=0.0, eps=1e-9) -> tuple:
+    def compute_loss(self, pred, target, eps=1e-9) -> torch.Tensor:
         gt_mask = (target > eps)
 
         num_valid_pixels = torch.sum(gt_mask)
@@ -41,26 +41,7 @@ class Net(nn.Module):
 
         sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
-        if grad_weight <= 0.0:
-            return sirmse_loss, sirmse_loss, torch.tensor(0.0)
-
-        # Gradients
-        pred_padded = F.pad(torch.log(preds_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
-        target_padded = F.pad(torch.log(target_safe).unsqueeze(1), (1, 1, 1, 1), mode='replicate')
-        gradient_x_predicted = F.conv2d(pred_padded, self.sobel_x)
-        gradient_y_predicted = F.conv2d(pred_padded, self.sobel_y)
-        gradient_x_groundtruth = F.conv2d(target_padded, self.sobel_x)
-        gradient_y_groundtruth = F.conv2d(target_padded, self.sobel_y)
-
-        # compute gradient loss
-        gradient_diff_x = torch.abs(gradient_x_predicted - gradient_x_groundtruth)
-        gradient_diff_y = torch.abs(gradient_y_predicted - gradient_y_groundtruth)
-
-        gradient_loss = torch.mean(gradient_diff_x[gt_mask.unsqueeze(1)]) + torch.mean(gradient_diff_y[gt_mask.unsqueeze(1)])
-
-        total_loss = sirmse_loss + grad_weight * gradient_loss
-
-        return total_loss, sirmse_loss, gradient_loss
+        return sirmse_loss
 
 
 class CNN(Net):

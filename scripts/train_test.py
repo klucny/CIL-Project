@@ -67,7 +67,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image, edges)
-                    loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
+                    loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -93,7 +93,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     edges= edges.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image, edges)
-                        loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt)
+                        loss = model.compute_loss(out, gt)
                     test_loss += sirmse_loss.item()
 
             test_loss_avg = test_loss / len(test_loader)
@@ -119,7 +119,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 optimizer.zero_grad()
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image)
-                    loss, sirmse_loss, gradient_loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
+                    loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
