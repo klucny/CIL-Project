@@ -39,7 +39,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     last_epoch = (start_epoch * len(train_loader)) - 1 if start_epoch > 0 else -1
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            max_lr=0.0005,
+            max_lr=0.0003,
             steps_per_epoch=len(train_loader),
             epochs=num_epochs,
             pct_start=0.3,

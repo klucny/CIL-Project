@@ -21,7 +21,7 @@ class Net(nn.Module):
     def forward(self, x) -> torch.Tensor:
         return x
 
-    def compute_loss(self, pred, target, eps=1e-9) -> torch.Tensor:
+    def compute_loss(self, pred, target, eps=1e-4) -> torch.Tensor:
         gt_mask = (target > eps)
 
         num_valid_pixels = torch.sum(gt_mask)
