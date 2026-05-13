@@ -41,18 +41,10 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     # mixed precision training with torch.amp
     scaler = torch.amp.GradScaler('cuda')
 
-    start_gradient_weight_epoch = int(num_epochs * 0.2)
-    ramp_up_gradient_weight_epochs = max(1, int(num_epochs * 0.2))
-
     for epoch in range(start_epoch, num_epochs):
         epoch_start_time = time.time()
         model.train()
         train_loss: float = 0.0
-
-        if epoch < start_gradient_weight_epoch:
-            current_grad_weight = 0.0
-        else:
-            current_grad_weight = min(0.1, 0.1 * ((epoch - start_gradient_weight_epoch) / ramp_up_gradient_weight_epochs))
 
         print(f"Epoch: {epoch + 1}/{num_epochs}")
 
@@ -67,7 +59,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image, edges)
-                    loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
+                    loss = model.compute_loss(out, gt)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -79,7 +71,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 if batch_idx % 100 == 0:
                     print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
 
-                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx, "grad_weight": current_grad_weight, "sirmse_loss": sirmse_loss.item(), "gradient_loss": gradient_loss.item()})
+                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx,})
 
             print(f"Training loss: {train_loss / len(train_loader)}")
 
@@ -94,7 +86,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image, edges)
                         loss = model.compute_loss(out, gt)
-                    test_loss += sirmse_loss.item()
+                    test_loss += loss.item()
 
             test_loss_avg = test_loss / len(test_loader)
 
@@ -119,7 +111,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 optimizer.zero_grad()
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image)
-                    loss = model.compute_loss(out, gt, grad_weight=current_grad_weight)
+                    loss = model.compute_loss(out, gt)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
@@ -142,8 +134,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     gt = gt.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image)
-                        loss, sirmse_loss, _ = model.compute_loss(out, gt)
-                    test_loss += sirmse_loss.item()
+                        loss = model.compute_loss(out, gt)
+                    test_loss += loss.item()
 
             test_loss_avg = test_loss / len(test_loader)
 
