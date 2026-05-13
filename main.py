@@ -120,7 +120,7 @@ if __name__ == '__main__':
 
         # generate the test and training datasets
         generator = torch.Generator().manual_seed(10)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=0.01)
 
         # Resume training
         start_epoch = 0

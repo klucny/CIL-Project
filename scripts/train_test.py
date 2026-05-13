@@ -36,8 +36,15 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     best_test_loss: float = float("inf")
 
     # learning rate scheduler
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
+    last_epoch = (start_epoch * len(train_loader)) - 1 if start_epoch > 0 else -1
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=0.0005,
+            steps_per_epoch=len(train_loader),
+            epochs=num_epochs,
+            pct_start=0.3,
+            last_epoch=last_epoch
+        )
     # mixed precision training with torch.amp
     scaler = torch.amp.GradScaler('cuda')
 
@@ -64,6 +71,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
+
+                scheduler.step()
 
                 train_loss += loss.item()
 
@@ -115,6 +124,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
+                scheduler.step()
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
@@ -179,8 +189,6 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                             print(f"Cleaned up space: Deleted {f}")
                     except ValueError:
                         pass # Ignore if filename structure is somehow unexpected
-
-        scheduler.step()
 
     print("Training finished")
 
