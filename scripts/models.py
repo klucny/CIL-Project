@@ -22,6 +22,9 @@ class Net(nn.Module):
         return x
 
     def compute_loss(self, pred, target, eps=1e-4) -> torch.Tensor:
+        pred = pred.to(torch.float32)
+        target = target.to(torch.float32)
+
         gt_mask = (target > eps)
 
         num_valid_pixels = torch.sum(gt_mask)
@@ -39,7 +42,7 @@ class Net(nn.Module):
 
         alpha: torch.Tensor = torch.mean(-diffs)
 
-        sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
+        sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)) + 1e-6)
 
         return sirmse_loss
 
