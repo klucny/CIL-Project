@@ -4,7 +4,111 @@ import torch.nn.functional as F
 import torchvision.models as torch_models
 from torchvision.models.resnet import conv1x1
 import copy
+import timm
 
+class ModernUNet(Net):
+    def __init__(self) -> None:
+        super(ModernUNet, self).__init__()
+
+        # 1. The Modern Encoder (ConvNeXt-Base)
+        # features_only=True tells it to output a list of 4 feature maps at different scales!
+        self.encoder = timm.create_model(
+            'convnext_base',
+            pretrained=True,
+            features_only=True
+        )
+
+        # ConvNeXt-Base outputs feature maps with these channel counts:
+        # e1: 128, e2: 256, e3: 512, e4: 1024
+
+        # 2. ASPP Bottleneck (Adapting to 1024 channels from e4)
+        self.aspp = ASPP(in_channels=1024, out_channels=1024)
+
+        # 3. The Decoder
+        self.up_conv4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(1024, 512, kernel_size=3, padding=1)
+        )
+        # e3 has 512 channels. 512 (from up_conv4) + 512 (from e3) = 1024
+        self.dec_conv4 = self._double_conv(1024, 512)
+
+        self.up_conv3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1)
+        )
+        # e2 has 256 channels. 256 + 256 = 512
+        self.dec_conv3 = self._double_conv(512, 256)
+
+        self.up_conv2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(256, 128, kernel_size=3, padding=1)
+        )
+        # e1 has 128 channels. 128 + 128 = 256
+        self.dec_conv2 = self._double_conv(256, 128)
+
+        self.up_conv1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        )
+        # We don't have an e0 from ConvNeXt, so we just use the 64 channels
+        self.dec_conv1 = self._double_conv(64, 64)
+
+        self.up_conv0 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        )
+        self.dec_conv0 = self._double_conv(32, 32)
+
+        self.out_conv = nn.Conv2d(32, 1, kernel_size=1)
+
+    def _double_conv(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x) -> torch.Tensor:
+        pad_size = 8
+        x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
+
+        # The timm encoder returns a list of feature maps!
+        features = self.encoder(x)
+        e1 = features[0] # [Batch, 128, H/4, W/4]
+        e2 = features[1] # [Batch, 256, H/8, W/8]
+        e3 = features[2] # [Batch, 512, H/16, W/16]
+        e4 = features[3] # [Batch, 1024, H/32, W/32]
+
+        # ASPP
+        b = self.aspp(e4)
+
+        # Decoder
+        d4 = self.up_conv4(b)
+        d4 = torch.cat([d4, e3], dim=1)
+        d4 = self.dec_conv4(d4)
+
+        d3 = self.up_conv3(d4)
+        d3 = torch.cat([d3, e2], dim=1)
+        d3 = self.dec_conv3(d3)
+
+        d2 = self.up_conv2(d3)
+        d2 = torch.cat([d2, e1], dim=1)
+        d2 = self.dec_conv2(d2)
+
+        # We do two more upsamples to get back to full resolution
+        d1 = self.up_conv1(d2)
+        d1 = self.dec_conv1(d1)
+
+        d0 = self.up_conv0(d1)
+        d0 = self.dec_conv0(d0)
+
+        out = self.out_conv(d0)
+        out = F.softplus(out) + 1e-4
+
+        return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
 
 # Class Net just acts as a superclass for clean typing
 # When creating new Models, inherit from Net and implement the methods

@@ -69,6 +69,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     loss = model.compute_loss(out, gt)
 
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
 
@@ -122,6 +124,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                     out = model.forward(image)
                     loss = model.compute_loss(out, gt)
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
