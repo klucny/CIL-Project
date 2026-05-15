@@ -6,6 +6,46 @@ from torchvision.models.resnet import conv1x1
 import copy
 import timm
 
+# Class Net just acts as a superclass for clean typing
+# When creating new Models, inherit from Net and implement the methods
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+
+        # sobel filters for gradient computation
+        sobel_x = torch.tensor([[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
+        sobel_y = torch.tensor([[[ -1, -2, -1], [0, 0, 0], [1, 2, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
+        self.register_buffer('sobel_x', sobel_x)
+        self.register_buffer('sobel_y', sobel_y)
+
+    def forward(self, x) -> torch.Tensor:
+        return x
+
+    def compute_loss(self, pred, target, eps=1e-4) -> torch.Tensor:
+        pred = pred.to(torch.float32)
+        target = target.to(torch.float32)
+
+        gt_mask = (target > eps)
+
+        num_valid_pixels = torch.sum(gt_mask)
+
+        if num_valid_pixels == 0:
+            raise Exception("No valid pixels in given image, cannot compute loss")
+
+        preds_safe = torch.clamp(pred, min=eps)
+        target_safe = torch.clamp(target, min=eps)
+
+        log_gt_filtered = torch.log(target[gt_mask])
+        log_pred_filtered = torch.log(preds_safe[gt_mask])
+
+        diffs: torch.Tensor = log_pred_filtered - log_gt_filtered
+
+        alpha: torch.Tensor = torch.mean(-diffs)
+
+        sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)) + 1e-6)
+
+        return sirmse_loss
+
 class ModernUNet(Net):
     def __init__(self) -> None:
         super(ModernUNet, self).__init__()
@@ -109,46 +149,6 @@ class ModernUNet(Net):
         out = F.softplus(out) + 1e-4
 
         return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
-
-# Class Net just acts as a superclass for clean typing
-# When creating new Models, inherit from Net and implement the methods
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-
-        # sobel filters for gradient computation
-        sobel_x = torch.tensor([[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
-        sobel_y = torch.tensor([[[ -1, -2, -1], [0, 0, 0], [1, 2, 1]]], dtype=torch.float32).view(1, 1, 3, 3)
-        self.register_buffer('sobel_x', sobel_x)
-        self.register_buffer('sobel_y', sobel_y)
-
-    def forward(self, x) -> torch.Tensor:
-        return x
-
-    def compute_loss(self, pred, target, eps=1e-4) -> torch.Tensor:
-        pred = pred.to(torch.float32)
-        target = target.to(torch.float32)
-
-        gt_mask = (target > eps)
-
-        num_valid_pixels = torch.sum(gt_mask)
-
-        if num_valid_pixels == 0:
-            raise Exception("No valid pixels in given image, cannot compute loss")
-
-        preds_safe = torch.clamp(pred, min=eps)
-        target_safe = torch.clamp(target, min=eps)
-
-        log_gt_filtered = torch.log(target[gt_mask])
-        log_pred_filtered = torch.log(preds_safe[gt_mask])
-
-        diffs: torch.Tensor = log_pred_filtered - log_gt_filtered
-
-        alpha: torch.Tensor = torch.mean(-diffs)
-
-        sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)) + 1e-6)
-
-        return sirmse_loss
 
 
 class CNN(Net):
