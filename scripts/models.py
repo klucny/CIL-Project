@@ -41,6 +41,29 @@ class Net(nn.Module):
 
         sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
+        """
+        pred_4d = pred.unsqueeze(1) if pred.dim() == 3 else pred
+        target_4d = target.unsqueeze(1) if target.dim() == 3 else target
+        mask_4d = gt_mask.unsqueeze(1) if gt_mask.dim() == 3 else gt_mask
+
+        # Compute Sobel edges
+        pred_grad_x = F.conv2d(pred_4d, self.sobel_x, padding=1)
+        pred_grad_y = F.conv2d(pred_4d, self.sobel_y, padding=1)
+        target_grad_x = F.conv2d(target_4d, self.sobel_x, padding=1)
+        target_grad_y = F.conv2d(target_4d, self.sobel_y, padding=1)
+
+        # Apply L1 loss only to valid pixels
+        if torch.sum(mask_4d) > 0:
+            grad_loss_x = F.l1_loss(pred_grad_x[mask_4d], target_grad_x[mask_4d])
+            grad_loss_y = F.l1_loss(pred_grad_y[mask_4d], target_grad_y[mask_4d])
+            grad_loss = grad_loss_x + grad_loss_y
+        else:
+            grad_loss = 0.0
+
+        # --- 3. Combined Loss ---
+        return sirmse_loss + (lambda_grad * grad_loss)
+        """
+        
         return sirmse_loss
 
 
