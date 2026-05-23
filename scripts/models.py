@@ -238,7 +238,7 @@ class CannyCNN(CNN, Canny):
 
 
 class ASPP(nn.Module):
-    def __init__(self, in_channels, out_channels,dilations=(6, 12, 18)):
+    def __init__(self, in_channels, out_channels,dilations=(6, 12, 18)): #try different dilation rates suggestions(3,6,9);(6,9,12);(12,18,24)
         super(ASPP, self).__init__()
 
         # We reduce the channels inside the parallel branches to keep memory usage safe
