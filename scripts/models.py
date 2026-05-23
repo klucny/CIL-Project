@@ -344,6 +344,55 @@ class CannyCNNSkip(CNN, Canny):
 
         return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
 
+class CNNASPP(CNN):
+    def __init__(self) -> None:
+        super(CNNASPP, self).__init__()
+        
+        # Keep the ASPP bridge
+        self.aspp = ASPP(2048, 2048)
+
+    # Overload forward to include ASPP but remove the 'edges' input
+    def forward(self, x) -> torch.Tensor:
+        pad_size = 8
+
+        x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
+
+        # Standard RGB encoder
+        e1 = self.encoder_conv1(x)
+        p1 = self.pool(e1)
+
+        e2 = self.encoder_layer1(p1)
+        e3 = self.encoder_layer2(e2)
+        e4 = self.encoder_layer3(e3)
+        b = self.encoder_layer4(e4)
+
+        # ASPP Bridge
+        b = self.aspp(b)
+
+        # Standard decoder (no edge features added to e1)
+        d4 = self.up_conv4(b)
+        d4 = torch.cat([d4, e4], dim=1)
+        d4 = self.dec_conv4(d4)
+
+        d3 = self.up_conv3(d4)
+        d3 = torch.cat([d3, e3], dim=1)
+        d3 = self.dec_conv3(d3)
+
+        d2 = self.up_conv2(d3)
+        d2 = torch.cat([d2, e2], dim=1)
+        d2 = self.dec_conv2(d2)
+
+        d1 = self.up_conv1(d2)
+        d1 = torch.cat([d1, e1], dim=1)
+        d1 = self.dec_conv1(d1)
+
+        d0 = self.up_conv0(d1)
+        d0 = self.dec_conv0(d0)
+
+        out = self.out_conv(d0)
+        out = F.softplus(out) + 1e-4
+
+        return out.squeeze(1)[:, pad_size:-pad_size, pad_size:-pad_size]
 
 class CNNSmall(Net):
     def __init__(self) -> None:
