@@ -37,7 +37,14 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
     # learning rate scheduler
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-
+    """                
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=5e-4,
+        steps_per_epoch=len(train_loader),
+        epochs=num_epochs
+    )
+    """
     # mixed precision training with torch.amp
     scaler = torch.amp.GradScaler('cuda')
 
