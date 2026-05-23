@@ -238,7 +238,7 @@ class CannyCNN(CNN, Canny):
 
 
 class ASPP(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels,dilations=(6, 12, 18)):
         super(ASPP, self).__init__()
 
         # We reduce the channels inside the parallel branches to keep memory usage safe
@@ -250,21 +250,18 @@ class ASPP(nn.Module):
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
-        # Branch 2: 3x3 Convolution, Dilation 6
         self.conv2 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, 3, padding=6, dilation=6, bias=False),
+            nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[0], dilation=dilations[0], bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
-        # Branch 3: 3x3 Convolution, Dilation 12
         self.conv3 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, 3, padding=12, dilation=12, bias=False),
+            nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[1], dilation=dilations[1], bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
-        # Branch 4: 3x3 Convolution, Dilation 18
         self.conv4 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, 3, padding=18, dilation=18, bias=False),
+            nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[2], dilation=dilations[2], bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
