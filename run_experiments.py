@@ -34,8 +34,8 @@ def mse_loss(pred, target, eps=1e-9):
 def run_ablation_study(train_loader, test_loader, device, num_epochs=20):
     # Define models to test
     models_to_test = {
-        #"BaseCNN": CNN, # DONE
-        #"CNNASPP": CNNASPP,
+        "BaseCNN": CNN,
+        "CNNASPP": CNNASPP,
         "CannyCNNSkip": CannyCNNSkip
     }
 
@@ -48,17 +48,8 @@ def run_ablation_study(train_loader, test_loader, device, num_epochs=20):
 
     results = {}
 
-    run = 0
     for model_name, ModelClass in models_to_test.items():
         for loss_name, custom_loss_fn in losses_to_test.items():
-            run += 1
-            # Already done:
-            if model_name == "BaseCNN" and loss_name == "SiRMSE":
-                print(f"Skipping {model_name} with {loss_name} since it's already done.")
-                continue
-            if model_name == "BaseCNN" and loss_name == "L1_Loss":
-                print(f"Skipping {model_name} with {loss_name} since it's already done.")
-                continue
 
             print(f"\n{'='*50}")
             print(f"Starting run: Model = {model_name} | Loss = {loss_name}")
@@ -92,14 +83,8 @@ def run_ablation_study(train_loader, test_loader, device, num_epochs=20):
                 loss_name=loss_name
             )
 
-            # Somehow bugged, so we only do one run
-            if run == 1:
-                break
-
             results[f"{model_name}_{loss_name}"] = best_model_path
         
-        if run == 1:
-            break
 
     print("\n--- Ablation Study Complete ---")
     for exp, path in results.items():
