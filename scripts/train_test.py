@@ -10,7 +10,7 @@ import wandb
 import copy
 
 def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epochs: int,
-          optimizer: torch.optim.Optimizer, device: torch.device, start_epoch: int = 0, cleanup: int = 5) -> None | str:
+          optimizer: torch.optim.Optimizer, device: torch.device, start_epoch: int = 0, cleanup: int = 5, loss_name: str = "SiRMSE") -> None | str:
     print("Training the model...")
     if cleanup > 0:
         print (f"Checkpoint cleanup enabled: Old checkpoints will be deleted every {cleanup} epochs.")
@@ -24,7 +24,7 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     # logging with wandb
     wandb.init(
         project="cil-depth-estimation", # This creates a project folder in your WandB dashboard
-        name=model.__class__.__name__,  # This automatically names the run "CannyCNNSkip"
+        name=f"{model.__class__.__name__}_{loss_name}",
         config={
             "epochs": num_epochs,
             "batch_size": train_loader.batch_size,
@@ -56,7 +56,6 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
         print(f"Epoch: {epoch + 1}/{num_epochs}")
 
         if isinstance(model, Canny):
-            # TODO: adapt to use edges
             for batch_idx, (image, edges, gt) in enumerate(train_loader):
                 image = image.to(device)
                 edges = edges.to(device)
@@ -112,8 +111,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 torch.save(best_model_state, saved_models_path + model_name)
 
         else:
-            for batch_idx, (image, gt) in enumerate(train_loader):
+            for batch_idx, (image, edges, gt) in enumerate(train_loader): # We only load edges here for compatibility with the CannyDataset, but they will be ignored by the model and not used in training
                 image = image.to(device)
+                edges = edges.to(device)
                 gt = gt.to(device)
                 optimizer.zero_grad()
                 with torch.amp.autocast('cuda'):
@@ -128,6 +128,8 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 if batch_idx % 100 == 0:
                     print(
                         f'Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}')
+                    
+                    wandb.log({"train_loss": loss.item(), "epoch": epoch + 1, "batch": batch_idx,})
 
             print(f"Training loss: {train_loss / len(train_loader)}")
 
@@ -136,8 +138,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
             model.eval()
             test_loss: float = 0.0
             with torch.no_grad():
-                for batch_idx, (image, gt) in enumerate(test_loader):
+                for batch_idx, (image, edges, gt) in enumerate(test_loader):
                     image = image.to(device)
+                    edges = edges.to(device)
                     gt = gt.to(device)
                     with torch.amp.autocast('cuda'):
                         out = model.forward(image)
