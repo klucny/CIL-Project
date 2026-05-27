@@ -1,2 +1,8 @@
 ./data
 ./results
+*.csv
+/results
+/data
+/models
+/scripts/__pycache__
+/wandb
