@@ -4,9 +4,9 @@ This project trains a model for monocular depth estimation, a computer vision ta
 
 ## AI Usage Declaration
 
-Tool used: Gemini
-Files affected: main.py, models.py, train_test.py, dataset.py
-Purpose: Used for Python syntax and how to use specific libraries.
+*Tool used:* Gemini \
+*Files affected:* main.py, models.py, train_test.py, dataset.py \
+*Purpose:* Used for Python syntax and how to use specific libraries.
 
 ## Project Structure
 
