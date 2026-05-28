@@ -22,23 +22,30 @@ class Net(nn.Module):
         return x
 
     def compute_loss(self, pred, target, eps=1e-9) -> torch.Tensor:
+        # mask to filter out pixels without ground truth depth maps
         gt_mask = (target > eps)
 
+        # count how many valid pixels exist in the ground truth
         num_valid_pixels = torch.sum(gt_mask)
 
         if num_valid_pixels == 0:
             raise Exception("No valid pixels in given image, cannot compute loss")
 
+        # clamp values slightly above zero to avoid numerical instability in log operations
         preds_safe = torch.clamp(pred, min=eps)
         target_safe = torch.clamp(target, min=eps)
 
+        # apply natural logarithm only to the valid pixels
         log_gt_filtered = torch.log(target[gt_mask])
         log_pred_filtered = torch.log(preds_safe[gt_mask])
 
+        # calculate the difference between predicted and ground truth log depths
         diffs: torch.Tensor = log_pred_filtered - log_gt_filtered
 
+        # compute average error across valid pixels
         alpha: torch.Tensor = torch.mean(-diffs)
 
+        # calculate the scale-invariant root mean squared error (SI-RMSE) loss
         sirmse_loss: torch.Tensor = torch.sqrt(torch.mean(torch.pow(alpha + diffs, 2)))
 
         """
@@ -83,38 +90,45 @@ class CNN(Net):
         self.encoder_layer4 = resnet.layer4
 
         # Decoder
+        # Decoder layer 4: upsample and reduce channels from 2048 to 1024
         self.up_conv4 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(2048, 1024, kernel_size=3, padding=1)
         )
         self.dec_conv4 = self._double_conv(2048, 1024)
 
+        # Decoder layer 3: upsample and reduce channels from 1024 to 512
         self.up_conv3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(1024, 512, kernel_size=3, padding=1)
         )
         self.dec_conv3 = self._double_conv(1024, 512)
 
+        # Decoder layer 2: upsample and reduce channels from 512 to 256
         self.up_conv2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(512, 256, kernel_size=3, padding=1)
         )
         self.dec_conv2 = self._double_conv(512, 256)
 
+        # Decoder layer 1: upsample and reduce channels from 256 to 64
         self.up_conv1 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(256, 64, kernel_size=3, padding=1)
         )
         self.dec_conv1 = self._double_conv(128, 64)
 
+        # Decoder layer 0: upsample and reduce channels from 64 to 32
         self.up_conv0 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(64, 32, kernel_size=3, padding=1)
         )
         self.dec_conv0 = self._double_conv(32, 32)
 
+        # Final output convolution mapping features back to a single depth value per pixel
         self.out_conv = nn.Conv2d(32, 1, kernel_size=1)
 
+    # helper to construct a sequential block of two conv layers with batch normalization and ReLU
     def _double_conv(self, in_channels, out_channels):
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
@@ -128,8 +142,10 @@ class CNN(Net):
     def forward(self, x) -> torch.Tensor:
         pad_size = 8 # needed to bring the pictures to size 572 because otherwise with ResNet size issue will occur
 
+        # apply reflection padding to prevent edge artifacts
         x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
 
+        # pass inputs through the ResNet backbone layers
         e1 = self.encoder_conv1(x)
         p1 = self.pool(e1)
 
@@ -138,6 +154,7 @@ class CNN(Net):
         e4 = self.encoder_layer3(e3)
         b = self.encoder_layer4(e4)
 
+        # decode upsampled blocks and concatenate with corresponding skip connection features from the encoder
         d4 = self.up_conv4(b)
         d4 = torch.cat([d4, e4], dim=1)
         d4 = self.dec_conv4(d4)
@@ -157,6 +174,7 @@ class CNN(Net):
         d0 = self.up_conv0(d1)
         d0 = self.dec_conv0(d0)
 
+        # map to 1-channel, ensure output is strictly positive, and crop back out the padding
         out = self.out_conv(d0)
         out = F.softplus(out) + 1e-4
 
@@ -187,6 +205,7 @@ class CannyCNN(CNN, Canny):
             nn.ReLU(inplace=True)
         )
 
+        # 1x1 convolution to reduce fused RGB and edge feature channels back to 2048
         self.fusion_conv = nn.Conv2d(in_channels=4096, out_channels=2048, kernel_size=1)
 
     # overload of CNN.forward()
@@ -196,6 +215,7 @@ class CannyCNN(CNN, Canny):
         x = F.pad(x, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
         edges = F.pad(edges, [pad_size, pad_size, pad_size, pad_size], mode='reflect')
 
+        # extract deep features from RGB encoder and Canny edge encoder
         e1 = self.encoder_conv1(x)
         p1 = self.pool(e1)
 
@@ -208,6 +228,7 @@ class CannyCNN(CNN, Canny):
 
 
         # b = b * edge_features
+        # fuse the RGB bottleneck features and edge features along channel dimension
         b = torch.cat([b, edge_features], dim=1)
         b = self.fusion_conv(b)
 
@@ -250,16 +271,19 @@ class ASPP(nn.Module):
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
+        # Branch 2: 3x3 Convolution with first dilation rate
         self.conv2 = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[0], dilation=dilations[0], bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
+        # Branch 3: 3x3 Convolution with second dilation rate
         self.conv3 = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[1], dilation=dilations[1], bias=False),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True)
         )
+        # Branch 4: 3x3 Convolution with third dilation rate
         self.conv4 = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, 3, padding=dilations[2], dilation=dilations[2], bias=False),
             nn.BatchNorm2d(mid_channels),
@@ -281,6 +305,7 @@ class ASPP(nn.Module):
         )
 
     def forward(self, x):
+        # pass the input through each parallel convolutional branch
         x1 = self.conv1(x)
         x2 = self.conv2(x)
         x3 = self.conv3(x)
@@ -418,6 +443,7 @@ class CNNSmall(Net):
     def __init__(self) -> None:
         super(CNNSmall, self).__init__()
 
+        # convolutional and batch normalization layers for the small encoder
         self.conv1 = nn.Conv2d(3, 16, 4)
         self.norm1 = nn.BatchNorm2d(16)
 
@@ -428,12 +454,14 @@ class CNNSmall(Net):
         self.relu = nn.ReLU()
         self.maxpool1 = nn.MaxPool2d(3, stride=2)
 
+        # transpose convolution layers for the small decoder
         self.deconv1 = nn.ConvTranspose2d(32, 16, kernel_size=7, stride=3, padding=7)
         self.norm_d1 = nn.BatchNorm2d(16)
         self.deconv2 = nn.ConvTranspose2d(16, 8, kernel_size=7, stride=3, padding=7)
         self.norm_d2 = nn.BatchNorm2d(8)
         self.deconv4 = nn.ConvTranspose2d(8, 1, kernel_size=7)
 
+        # sequential block containing decoder layers
         self.decoder = nn.Sequential(
             self.deconv1,
             self.norm_d1,
@@ -459,6 +487,7 @@ class CNNSmall(Net):
         x = self.conv3(x)
         x = self.relu(x)
 
+        # Decoder
         x = self.decoder(x)
 
         return x.squeeze(1)

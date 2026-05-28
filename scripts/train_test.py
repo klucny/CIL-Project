@@ -49,7 +49,9 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
     scaler = torch.amp.GradScaler('cuda')
 
     for epoch in range(start_epoch, num_epochs):
+        # track start time to compute total epoch duration
         epoch_start_time = time.time()
+        # enable train mode for layers like dropout and batchnorm
         model.train()
         train_loss: float = 0.0
 
@@ -57,20 +59,27 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
         if isinstance(model, Canny):
             for batch_idx, (image, edges, gt) in enumerate(train_loader):
+                # move batch inputs and outputs to the selected device
                 image = image.to(device)
                 edges = edges.to(device)
                 gt = gt.to(device)
 
+                # reset gradients from the previous training step
                 optimizer.zero_grad()
 
+                # execute forward pass and compute loss under automatic mixed precision autocasting
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image, edges)
                     loss = model.compute_loss(out, gt)
 
+                # scale loss and backpropagate gradients
                 scaler.scale(loss).backward()
+                # step optimizer parameters using scaled gradients
                 scaler.step(optimizer)
+                # update the mixed precision scale factor for the next step
                 scaler.update()
 
+                # accumulate loss for training statistics
                 train_loss += loss.item()
 
                 # print current epoch, batch and loss every 100 batches
@@ -112,13 +121,17 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
         else:
             for batch_idx, (image, edges, gt) in enumerate(train_loader): # We only load edges here for compatibility with the CannyDataset, but they will be ignored by the model and not used in training
+                # move training tensors to device
                 image = image.to(device)
                 edges = edges.to(device)
                 gt = gt.to(device)
+                # clear gradients from the previous step
                 optimizer.zero_grad()
+                # perform forward pass and compute loss in automatic mixed precision mode
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image)
                     loss = model.compute_loss(out, gt)
+                # scale and compute gradients, update model weights, and adjust scale factor
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
@@ -163,11 +176,14 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
                 torch.save(best_model_state, saved_models_path + model_name)
 
 
+        # compute average test loss across all test batches
         test_loss_avg = test_loss / len(test_loader)
+        # retrieve current learning rate from optimizer parameters
         current_lr = optimizer.param_groups[0]['lr']
 
         print(f"Test Loss in epoch {epoch+1}/{num_epochs}: {test_loss / len(test_loader)}")
         print(f"Current Learning Rate: {current_lr}")
+        # log metric values to weights and biases dashboard
         wandb.log({"test_loss": test_loss_avg, "epoch": epoch + 1, "learning_rate": current_lr})
 
         print(f"Epoch duration (in minutes): {(time.time() - epoch_start_time) / 60:.2f}")
@@ -206,31 +222,40 @@ def train(train_loader: DataLoader, test_loader: DataLoader, model: Net, num_epo
 
 def eval(dataloader: DataLoader, model: Net, device: torch.device):
     print("Evaluating the model...")
+    # move model to the selected hardware accelerator device
     model.to(device)
     total_loss: float = 0.0
+    # turn off gradient computation to save GPU memory and accelerate evaluation
     with torch.no_grad():
         if isinstance(model, Canny):
             #TODO: adapt to use edges
             for batch_idx, (image, edges, gt) in enumerate(dataloader):
                 print(f"Batch: {batch_idx}/{len(dataloader)}")
+                # load data to target device
                 image = image.to(device)
                 gt = gt.to(device)
                 edges = edges.to(device)
+                # run forward pass and compute evaluation loss under automatic mixed precision autocasting
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image, edges)
                     loss = model.compute_loss(out, gt)
+                # accumulate overall loss
                 total_loss += loss.item()
         else:
             for batch_idx, (image, gt) in enumerate(dataloader):
                 print(f"Batch: {batch_idx}/{len(dataloader)}")
+                # load standard training tensors to target device
                 image = image.to(device)
                 gt = gt.to(device)
+                # run forward pass and compute evaluation loss under automatic mixed precision autocasting
                 with torch.amp.autocast('cuda'):
                     out = model.forward(image)
                     loss = model.compute_loss(out, gt)
+                # accumulate overall loss
                 total_loss += loss.item()
 
         print(f"Average loss: {total_loss / len(dataloader)}")
+        # verify that the model remains in evaluation mode
         model.eval()
 
 
@@ -238,6 +263,7 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
     print("Running grading tests...")
     # results = torch.zeros((len(data_loader.dataset), 560, 560), dtype=torch.float32)
 
+    # move the model to target accelerator device
     model.to(device)
     # check which type of dataset it is (Canny or CIL)
     with torch.no_grad():
@@ -245,15 +271,19 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
             # TODO: adapt to use edges
             for batch_idx, (image, edges, name) in enumerate(data_loader):
                 # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
+                # move test tensors to target device
                 image = image.to(device)
                 edges = edges.to(device)
                 with torch.amp.autocast('cuda'):
                     # Small flip trick to improve performance if the model predicts slightly better on one side of the image than the other (e.g. due to positional encoding or similar)
                     out_standard = model.forward(image, edges)
+                    # flip image horizontally to compute the flip-augmented prediction
                     image_flipped = torch.flip(image, dims=[3])
                     edges_flipped = torch.flip(edges, dims=[3])
                     out_flipped = model.forward(image_flipped, edges_flipped)
+                    # flip the predictions back to align with the original orientation
                     out_unflipped = torch.flip(out_flipped, dims=[2])
+                    # average standard and flip-augmented predictions to improve depth estimation accuracy
                     out = (out_standard + out_unflipped) / 2.0
 
                 
@@ -266,13 +296,17 @@ def run_grading_tests(data_loader: DataLoader, model: Net, device: torch.device)
         else:
             for batch_idx, (image, name) in enumerate(data_loader):
                 # print(f"Batch: {batch_idx+1}/{len(data_loader)}")
+                # move test inputs to target device
                 image = image.to(device)
                 with torch.amp.autocast('cuda'):
                     # Same trick as above
                     out_standard = model.forward(image)
+                    # flip image horizontally to compute the flip-augmented prediction
                     image_flipped = torch.flip(image, dims=[3])
                     out_flipped = model.forward(image_flipped)
+                    # flip the predictions back to align with the original orientation
                     out_unflipped = torch.flip(out_flipped, dims=[2])
+                    # average standard and flip-augmented predictions to improve depth estimation accuracy
                     out = (out_standard + out_unflipped) / 2.0
 
                 # write batch outputs to result folder

@@ -8,6 +8,7 @@ import argparse
 import os
 
 if __name__ == '__main__':
+    # parse command line arguments to configure training/evaluation options
     parser = argparse.ArgumentParser(description='Monocular Depth Estimation Training')
     parser.add_argument('--student-cluster', action='store_true',
                         help='Use the student cluster dataset path')
@@ -41,6 +42,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    # mapping model name strings to their corresponding class definitions
     available_models = {
         "CNN": CNN,
         "CNNSmall": CNNSmall,
@@ -57,6 +59,7 @@ if __name__ == '__main__':
     NUM_EPOCHS = args.num_epochs
     chosen_model = available_models.get(args.model, CannyCNNSkip)() # default to CannyCNNSkip as it is the best
 
+    # choose the correct dataset subclass based on whether the selected model expects Canny edge inputs
     if isinstance(chosen_model, Canny):
         dataset_type : Dataset= CannyDataset.empty_constructor()
     else:
@@ -66,12 +69,15 @@ if __name__ == '__main__':
     # decided based on arg flag if the grading test should be run.
     if args.grading_tests:
         print("Running grading tests instead of training.")
+        # instantiate the empty model architecture to receive grading weights
         grading_model = type(chosen_model)()
+        # load checkpoint weights from disk onto the target device
         weights_dict = torch.load(os.path.join("./models", args.checkpoint), map_location=torch.device(device))
         if "model_state_dict" in weights_dict:
             weights_dict = weights_dict["model_state_dict"]
         grading_model.load_state_dict(weights_dict)
 
+        # configure dataset paths depending on execution environment
         if args.student_cluster:
             print("Using student cluster dataset path.")
             dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/test', test_dataset=True)
@@ -79,14 +85,17 @@ if __name__ == '__main__':
             print("Using local dataset path.")
             dataset = type(dataset_type)('./data/monodepth_kaggle2026/test', test_dataset=True)
 
+        # create a dataloader to serve batch samples from the test dataset
         test_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True)
         print(f"Size test dataset: {len(test_loader.dataset)}")
+        # evaluate the model on test set and write the predictions to a csv file for grading
         run_grading_tests(test_loader, grading_model, device=device)
         create_results_csv()
 
     # decided to train the model and run the evaluation/test instead of running the grading tests, based on arg flag.
     elif args.eval:
         print("Running eval tests instead of training.")
+        # configure training paths depending on execution environment
         if args.student_cluster:
             print("Using student cluster dataset path.")
             dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/train')
@@ -95,12 +104,14 @@ if __name__ == '__main__':
             dataset = type(dataset_type)('./data/monodepth_kaggle2026/train')
 
 
+        # instantiate the model architecture and load weights for evaluation
         eval_model = type(chosen_model)()
         weights_dict = torch.load(os.path.join("./models", args.eval), map_location=torch.device(device))
         if "model_state_dict" in weights_dict:
             weights_dict = weights_dict["model_state_dict"]
         eval_model.load_state_dict(weights_dict)
 
+        # split train/test datasets for standard seed, load test data, and run evaluation
         generator = torch.Generator().manual_seed(10)
         train_dataset, test_dataset= random_split(dataset, [0.8, 0.2], generator=generator)
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
@@ -109,6 +120,7 @@ if __name__ == '__main__':
 
 
     else:
+        # configure training paths depending on execution environment
         if args.student_cluster:
             print("Using student cluster dataset path.")
             dataset = type(dataset_type)('/cluster/courses/cil/monocular-depth-estimation/train')
@@ -121,6 +133,7 @@ if __name__ == '__main__':
 
         # generate the test and training datasets
         generator = torch.Generator().manual_seed(10)
+        # initialize the optimizer with standard Monocular Depth Estimation hyper-parameters
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
        
         #optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
@@ -136,6 +149,7 @@ if __name__ == '__main__':
                 model.load_state_dict(checkpoint["model_state_dict"])
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                 start_epoch = checkpoint["epoch"]
+                # move optimizer states to device to prevent torch device mismatch errors
                 for state in optimizer.state.values():
                     for k, v in state.items():
                         if isinstance(v, torch.Tensor):
@@ -144,19 +158,24 @@ if __name__ == '__main__':
                 print("Warning: Loading old-style weights-only checkpoint. Optimizer starting from scratch.")
                 model.load_state_dict(checkpoint)
 
+        # calculate sizes for splitting the dataset into training and validation subsets
         dataset_size = len(dataset)
         train_size = int(TRAIN_TEST_SPLIT_RATIO * dataset_size)
         test_size = dataset_size - train_size
 
+        # split the full dataset into train and validation datasets
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size], generator=generator)
         if args.debug_subset:
             print("Using a small subset of the data for quick debugging and testing.")
+            # slice a small subset of the dataset when debugging to speed up epochs
             train_dataset = torch.utils.data.Subset(train_dataset, range(0, min(500, len(train_dataset))))
             test_dataset = torch.utils.data.Subset(test_dataset, range(0, min(500, len(test_dataset))))
         # train_dataset, test_dataset, bullshit = random_split(dataset, [0.01, 0.01, 0.98], generator=generator)
+        # initialize data loaders for both datasets
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
 
+        # start the training loop across all configured epochs
         path_to_best_model: str = train(train_loader, test_loader, model, num_epochs=NUM_EPOCHS, optimizer=optimizer,
                                         device=device, start_epoch=start_epoch, cleanup=args.cleanup)
 
